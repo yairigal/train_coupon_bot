@@ -2,8 +2,10 @@ import os
 import json
 import logging
 import datetime
+import re
 from abc import ABCMeta, abstractmethod
 from functools import wraps
+from typing import List
 
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler)
@@ -108,6 +110,8 @@ class TrainCouponBot:
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
         # start_polling() is non-blocking and will stop the bot gracefully.
+        self.logger.info(f"Bot started running, polling={self.polling}, number of threads={self.num_threads}, "
+                         f"port={self.port}")
         self.updater.idle()
 
     def _save_user(self, user):
@@ -119,10 +123,10 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as cts:
             contacts = json.load(cts)
 
-        contacts[str(user.id)] = f"{user.first_name} {user.last_name}"
+        contacts[user.username] = str(user.id)
 
         with open(self.USERS_FILE, "w") as cts:
-            json.dump(contacts, cts)
+            json.dump(contacts, cts, indent=4)
 
     def _get_next_week(self):
         now = datetime.datetime.now()
@@ -134,7 +138,7 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as f:
             users = json.load(f)
 
-        for id, name in users.items():
+        for name, id in users.items():
             try:
                 self.updater.bot.sendMessage(int(id), message)
 
@@ -145,6 +149,31 @@ class TrainCouponBot:
     def train_stations(self):
         return train_api.id_to_station.values()
 
+    @staticmethod
+    def _id_valid(id_arg):
+        return re.fullmatch(r'\d+', id_arg) is not None
+
+    @staticmethod
+    def _phone_valid(phone):
+        return re.fullmatch(r'\d+', phone) is not None
+
+    @staticmethod
+    def _email_valid(email):
+        return re.fullmatch(r'.+@.+', email) is not None
+
+    def _reformat_to_readable_date(self, d):
+        return re.fullmatch("(.*) \d+:.*", d.ctime()).group(1)
+
+    def _reply_message(self, update, message, keyboard: List[List[str]] = None):
+        if keyboard is not None:
+            update.message.reply_text(message,
+                                      reply_markup=ReplyKeyboardMarkup(
+                                          keyboard=keyboard,
+                                          one_time_keyboard=True))
+
+        else:
+            update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+
     # Handlers
     @log_user
     def handle_start(self, update, context):
@@ -154,100 +183,140 @@ class TrainCouponBot:
 
     @log_user
     def handle_id(self, update, context):
-        context.user_data['id'] = update.message.text
-        update.message.reply_text('Please enter your phone number', reply_markup=ReplyKeyboardRemove())
+        user_id = update.message.text
+        if not self._id_valid(user_id):
+            self._reply_message(update, 'id is not valid, please enter valid id')
+            return States.ID
+
+        context.user_data['id'] = user_id
+        self._reply_message(update, 'Please enter your phone number')
         return States.PHONE
 
     @log_user
     def handle_phone(self, update, context):
-        context.user_data['phone'] = update.message.text
+        phone = update.message.text
+        if not self._phone_valid(phone):
+            self._reply_message(update, 'phone number is not valid, please enter valid phone number')
+            return States.PHONE
+
+        context.user_data['phone'] = phone
         update.message.reply_text('Please enter your email address', reply_markup=ReplyKeyboardRemove())
         return States.EMAIL
 
     @log_user
     def handle_email(self, update, context):
-        context.user_data['email'] = update.message.text
-        update.message.reply_text('Got all data! choose origin station',
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      keyboard=[[i] for i in self.train_stations],
-                                      one_time_keyboard=True))
+        email = update.message.text
+        if not self._email_valid(email):
+            self._reply_message(update, 'email is not valid, please enter valid email address')
+            return States.EMAIL
+
+        context.user_data['email'] = email
+        self._reply_message(update,
+                            'Choose origin station',
+                            keyboard=[[i] for i in self.train_stations])
         return States.HANDLE_ORIGIN_STATION
 
     @log_user
     def handle_origin_station(self, update, context):
-        context.user_data['origin_station'] = update.message.text
-        update.message.reply_text('Choose destination',
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      keyboard=[[i] for i in self.train_stations],
-                                      one_time_keyboard=True))
+        origin_station = update.message.text
+        if origin_station not in self.train_stations:
+            self._reply_message(update,
+                                'Please choose a station from the list below',
+                                keyboard=[[i] for i in self.train_stations])
+            return States.HANDLE_ORIGIN_STATION
+
+        context.user_data['origin_station_id'] = train_api.train_station_name_to_id(origin_station)
+        self._reply_message(update,
+                            'Choose destination',
+                            keyboard=[[i] for i in self.train_stations])
         return States.HANDLE_DEST_STATION
 
     @log_user
     def handle_dest_station(self, update, context):
-        context.user_data['dest_station'] = update.message.text
+        destination_station = update.message.text
+        if destination_station not in self.train_stations:
+            self._reply_message(update,
+                                'Please choose a station from the list below',
+                                keyboard=[[i] for i in self.train_stations])
+            return States.HANDLE_DEST_STATION
+
+        context.user_data['dest_station_id'] = train_api.train_station_name_to_id(destination_station)
+
         week_datetimes = self._get_next_week()
         labels_to_dates = {}
         labels_to_dates['Today'] = next(week_datetimes)
         labels_to_dates['Tomorrow'] = next(week_datetimes)
-        labels_to_dates.update({date.strftime('%d/%m/%Y'): date for date in week_datetimes})
+        labels_to_dates.update({self._reformat_to_readable_date(date): date for date in week_datetimes})
         context.user_data['dates'] = labels_to_dates
 
-        update.message.reply_text('Choose a day',
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      keyboard=[[i] for i in labels_to_dates.keys()],
-                                      one_time_keyboard=True))
+        self._reply_message(update,
+                            'Choose a day',
+                            keyboard=[[i] for i in labels_to_dates.keys()])
         return States.HANDLE_DATE
 
     @log_user
     def handle_date(self, update, context):
-        date = context.user_data['dates'][update.message.text]
-        origin_station_id = train_api.train_station_name_to_id(context.user_data['origin_station'])
-        dest_station_id = train_api.train_station_name_to_id(context.user_data['dest_station'])
+        if update.message.text not in context.user_data['dates'].keys():
+            self._reply_message(update,
+                                'Please choose a date from the dates below',
+                                keyboard=[[i] for i in context.user_data['dates'].keys()])
+            return States.HANDLE_DATE
 
-        res = train_api.get_available_trains(origin_station_id=origin_station_id,
-                                             dest_station_id=dest_station_id,
+        date = context.user_data['dates'][update.message.text]
+        res = train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
+                                             dest_station_id=context.user_data['dest_station_id'],
                                              date=date)
 
         trains = {f"{train['DepartureTime']} - {train['ArrivalTime']}": train for train in res}
         if len(trains) == 0:
-            update.message.reply_text(f'No trains available for {date}, Please pick a new date',
-                                      reply_markup=ReplyKeyboardMarkup(
-                                          keyboard=[[i] for i in context.user_data['dates'].keys()],
-                                          one_time_keyboard=True))
+            self._reply_message(update,
+                                f'No trains available for {self._reformat_to_readable_date(date)}, '
+                                f'Please pick a new date',
+                                keyboard=[[i] for i in context.user_data['dates'].keys()])
             return States.HANDLE_DATE
 
         context.user_data['trains'] = trains
-        update.message.reply_text('Pick a train',
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      keyboard=[[i] for i in trains.keys()],
-                                      one_time_keyboard=True))
+        self._reply_message(update, 'Pick a train', keyboard=[[i] for i in trains.keys()])
         return States.HANDLE_TRAIN
 
     @log_user
     def handle_train(self, update, context):
         train_date = update.message.text
+        if train_date not in context.user_data['trains'].keys():
+            self._reply_message(update,
+                                'Please select a train from the list below',
+                                keyboard=[[i] for i in context.user_data['trains'].keys()])
+            return States.HANDLE_TRAIN
+
         current_train = context.user_data['trains'][train_date]
+
+        image_path = 'image.jpeg'
         train_api.request_train(user_id=context.user_data['id'],
                                 mobile=context.user_data['phone'],
                                 email=context.user_data['email'],
                                 train_json=current_train,
-                                image_dest='image.jpeg')
+                                image_dest=image_path)
 
-        with open('image.jpeg', 'rb') as f:
+        with open(image_path, 'rb') as f:
             update.message.bot.send_chat_action(chat_id=update.effective_message.chat_id,
                                                 action=ChatAction.UPLOAD_PHOTO)
             update.message.reply_photo(f)
 
-        update.message.reply_text('Order another coupon?',
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      keyboard=[['Order Different Train'], ['Order the same', 'Close']],
-                                      one_time_keyboard=True))
+        self._reply_message(update,
+                            'Get another coupon?',
+                            keyboard=[['Order Different Train'], ['Order the same', 'Close']])
 
         return States.WHETHER_TO_CONTINUE
 
     @log_user
     def handle_whether_to_continue(self, update, context):
         answer = update.message.text
+        if answer not in ['Order Different Train', 'Order the same', 'Close']:
+            self._reply_message(update,
+                                'Please choose a valid option',
+                                keyboard=[['Order Different Train'], ['Order the same', 'Close']])
+            return States.WHETHER_TO_CONTINUE
+
         if answer == 'Order Different Train':
             update.message.reply_text('Choose origin station',
                                       reply_markup=ReplyKeyboardMarkup(
@@ -262,13 +331,12 @@ class TrainCouponBot:
                                           one_time_keyboard=True))
             return States.HANDLE_DATE
 
-        else:
-            return ConversationHandler.END
+        return self.cancel(update, context)
 
     @log_user
     def cancel(self, update, context):
         user = update.message.from_user
-        self.logger.info("User %s canceled the conversation.", user.first_name)
+        self.logger.info("User %s canceled the conversation.", user.username)
         update.message.reply_text('Goodbye !', reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
