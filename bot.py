@@ -293,7 +293,7 @@ class TrainCouponBot:
 
         image_path = 'image.jpeg'
         try:
-            self._reply_message(update, "ordering coupon...")
+            self._reply_message(update, "Ordering coupon...")
             train_api.request_train(user_id=context.user_data['id'],
                                     mobile=context.user_data['phone'],
                                     email=context.user_data['email'],
