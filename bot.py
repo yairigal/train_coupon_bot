@@ -1,3 +1,10 @@
+"""Israel train coupon telegram bot implementation.
+Since the coronavirus spread, Israel train is now requires their clients to order a coupon for every train ride.
+This can be very tedious, this bot should make the process much easier.
+User inputs their ID, phone number and email.
+Then they choose their source and destination stations and the specific train they want to ride.
+The bot send POST request to the server and respond with the QR image.
+"""
 import re
 import os
 import json
@@ -49,6 +56,15 @@ class State(metaclass=ABCMeta):
 
 
 class TrainCouponBot:
+    """Israel train coupon telegram bot.
+
+    Attributes:
+        token (str): the telegram bot unique token.
+        polling (bool): whether the bot is on polling mode or webhook mode.
+        num_threads (number): the maximum threads the dispatcher can open.
+        port (number): which port the bot listens to.
+        logger_level (number): logging level.
+    """
     USERS_FILE = 'contacts.json'
 
     def __init__(self, token, polling, num_threads, port, logger_level=logging.INFO):
@@ -63,6 +79,10 @@ class TrainCouponBot:
         self.logger = logging.getLogger(__name__)
 
     def run(self):
+        """Start listening for messages.
+
+        This function defines a state machine for the bot to know what do to in each state.
+        """
         # Create the EventHandler and pass it your bot's token.
         self.updater = Updater(self.token, workers=self.num_threads, use_context=True)
 
@@ -115,6 +135,11 @@ class TrainCouponBot:
         self.updater.idle()
 
     def _save_user(self, user):
+        """Add a new user to the local file.
+
+        Args:
+            user (telegram.User): the new user to add.
+        """
         if not os.path.exists(self.USERS_FILE):
             # Create an empty json file
             with open(self.USERS_FILE, "w") as cts:
@@ -130,11 +155,21 @@ class TrainCouponBot:
 
     @property
     def _next_week(self):
+        """Generate datetime objects for each day in the next week from now.
+
+        Yields:
+            datetime.datetime. the next day in the week from now.
+        """
         now = datetime.datetime.now()
         for i in range(7):
             yield now + datetime.timedelta(i)
 
     def _broadcast_message_to_users(self, message):
+        """Send a message for all the users who used the bot in the past.
+
+        Args:
+            message (str): the message to send.
+        """
         self.logger.info(f"Broadcasting message `{message}`")
         with open(self.USERS_FILE) as f:
             users = json.load(f)
@@ -148,6 +183,7 @@ class TrainCouponBot:
 
     @property
     def train_stations(self):
+        """Return list of hebrew names of the train stations sorted alphabetically."""
         return sorted([train_info['HE'] for train_info in train_api.stations_info.values()])
 
     @staticmethod
@@ -162,10 +198,26 @@ class TrainCouponBot:
     def _email_valid(email):
         return re.fullmatch(r'.+@.+', email) is not None
 
-    def _get_hour(self, train_time):
+    def _get_hour(self, train_time: str):
+        """Get the hour from a datetime-template text.
+
+        Args:
+            train_time (str): datetime template in the form of `25/09/2020 17:30:00`
+
+        Returns:
+            str. the hour and minutes in the form of `17:30`.
+        """
         return train_time.split(' ')[-1].replace(":00", "")
 
-    def _reformat_to_readable_date(self, d):
+    def _reformat_to_readable_date(self, d: datetime.datetime):
+        """Convert datetime object to a readable date format.
+
+        Args:
+            d (datetime.datetime): the date in a datetime object.
+
+        Returns:
+            str. the date in a readable format (e.g. `Tue Sep 20`).
+        """
         return re.fullmatch("(.*) \d+:.*", d.ctime()).group(1)
 
     def _reply_message(self, update, message, keyboard: List[List[str]] = None):
