@@ -147,7 +147,7 @@ class TrainCouponBot:
 
     @property
     def train_stations(self):
-        return train_api.id_to_station.values()
+        return [train_info['HE'] for train_info in train_api.stations_info.values()]
 
     @staticmethod
     def _id_valid(id_arg):
@@ -263,9 +263,14 @@ class TrainCouponBot:
             return States.HANDLE_DATE
 
         date = context.user_data['dates'][update.message.text]
-        res = train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
-                                             dest_station_id=context.user_data['dest_station_id'],
-                                             date=date)
+        try:
+            res = train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
+                                                 dest_station_id=context.user_data['dest_station_id'],
+                                                 date=date)
+        except (ValueError, AttributeError):
+            self._reply_message(update,
+                                'An error occurred on the server, Please retry again')
+            return self.handle_start(update, context)
 
         trains = {f"{train['DepartureTime']} - {train['ArrivalTime']}": train for train in res}
         if len(trains) == 0:
@@ -291,11 +296,29 @@ class TrainCouponBot:
         current_train = context.user_data['trains'][train_date]
 
         image_path = 'image.jpeg'
-        train_api.request_train(user_id=context.user_data['id'],
-                                mobile=context.user_data['phone'],
-                                email=context.user_data['email'],
-                                train_json=current_train,
-                                image_dest=image_path)
+        try:
+            train_api.request_train(user_id=context.user_data['id'],
+                                    mobile=context.user_data['phone'],
+                                    email=context.user_data['email'],
+                                    train_json=current_train,
+                                    image_dest=image_path)
+
+        except AttributeError:
+            # error with the arguments passed
+            self._reply_message(update,
+                                'Error occurred in the server, some details might be wrong, please enter them again')
+            return self.handle_start(update, context)
+
+        except (ValueError, RuntimeError) as e:
+            # No bardcode image found
+            self.logger.error(f'no barcode image received, error={e}')
+            self._reply_message(update,
+                                'No barcode image received from the server. This might happen if the same seat is '
+                                'ordered twice. Please pick another seat')
+            self._reply_message(update,
+                                'Choose a day',
+                                keyboard=[[i] for i in context.user_data['dates'].keys()])
+            return States.HANDLE_DATE
 
         with open(image_path, 'rb') as f:
             update.message.bot.send_chat_action(chat_id=update.effective_message.chat_id,
@@ -318,17 +341,15 @@ class TrainCouponBot:
             return States.WHETHER_TO_CONTINUE
 
         if answer == 'Order Different Train':
-            update.message.reply_text('Choose origin station',
-                                      reply_markup=ReplyKeyboardMarkup(
-                                          keyboard=[[i] for i in train_api.id_to_station.values()],
-                                          one_time_keyboard=True))
+            self._reply_message(update,
+                                'Choose origin station',
+                                keyboard=[[i] for i in self.train_stations])
             return States.HANDLE_ORIGIN_STATION
 
         elif answer == 'Order the same':
-            update.message.reply_text('Choose time',
-                                      reply_markup=ReplyKeyboardMarkup(
-                                          keyboard=[[i] for i in context.user_data['dates'].keys()],
-                                          one_time_keyboard=True))
+            self._reply_message(update,
+                                'Choose time',
+                                keyboard=[[i] for i in context.user_data['dates'].keys()])
             return States.HANDLE_DATE
 
         return self.cancel(update, context)
@@ -346,7 +367,7 @@ if __name__ == '__main__':
         config = json.load(config_file)
 
     # Read token
-    with open("token") as token:
-        TOKEN = token.read().strip('\n')
+    with open("token") as token_file:
+        token = token_file.read().strip('\n')
 
-    TrainCouponBot(token=TOKEN, **config).run()
+    TrainCouponBot(token=token, **config).run()

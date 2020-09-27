@@ -6,77 +6,6 @@ from json import JSONDecodeError
 
 import requests
 
-id_to_station = {
-    300: "פאתי מודיעין",
-    400: "מודיעין - מרכז",
-    680: "ירושלים - יצחק נבון",
-    700: "קריית חיים",
-    1220: "מרכזית המפרץ (לב המפרץ)",
-    1240: "יקנעם - כפר יהושע",
-    1250: "מגדל העמק - כפר ברוך",
-    1260: "עפולה ר.איתן",
-    1280: "בית שאן",
-    1300: "חוצות המפרץ",
-    1400: "קריית מוצקין",
-    1500: "עכו",
-    1600: "נהריה",
-    1820: "אחיהוד",
-    1840: "כרמיאל",
-    2100: "חיפה- מרכז השמונה",
-    2200: "חיפה - בת גלים",
-    2300: "חיפה - חוף הכרמל (ש' רזיאל)",
-    2500: "עתלית",
-    2800: "בנימינה",
-    2820: "קיסריה - פרדס חנה",
-    2940: "רעננה מערב",
-    2960: "רעננה דרום",
-    3100: "חדרה - מערב",
-    3300: "נתניה",
-    3310: "נתניה - ספיר",
-    3400: "בית יהושע",
-    3500: "הרצליה",
-    3600: "תל אביב - אוניברסיטה",
-    3700: "תל אביב - סבידור מרכז",
-    4100: "בני ברק",
-    4170: "פתח תקווה  - קריית אריה",
-    4250: "פתח תקווה - סגולה",
-    4600: "תל אביב - השלום",
-    4640: "צומת חולון",
-    4660: "חולון - וולפסון",
-    4680: "בת ים - יוספטל",
-    4690: "בת ים - קוממיות",
-    4800: "כפר חב\"ד",
-    4900: "תל אביב - ההגנה",
-    5000: "לוד",
-    5010: "רמלה",
-    5150: "לוד גני אביב",
-    5200: "רחובות (א' הדר) ",
-    5300: "באר יעקב",
-    5410: "יבנה מזרח",
-    5800: "אשדוד עד הלום (מ' בר כוכבא)",
-    5900: "אשקלון",
-    6150: "קריית מלאכי - יואב",
-    6300: "בית שמש",
-    6500: "ירושלים - גן החיות התנכי",
-    6700: "ירושלים - מלחה",
-    6900: "מזכרת בתיה",
-    7000: "קריית גת",
-    7300: "באר שבע- צפון/אוניברסיטה",
-    7320: "באר שבע - מרכז",
-    7500: "דימונה",
-    8550: "להבים - רהט",
-    8600: "נמל תעופה בן גוריון",
-    8700: "כפר סבא - נורדאו (א' קוסטיוק)",
-    8800: "ראש העין - צפון",
-    9000: "יבנה מערב",
-    9100: "ראשון לציון - הראשונים",
-    9200: "הוד השרון - סוקולוב",
-    9600: "שדרות",
-    9650: "נתיבות",
-    9700: "אופקים",
-    9800: "ראשון לציון-משה דיין"
-}
-
 stations_info = {
     3700: {'Code': '3700',
            'HE': 'ת"א סבידור מרכז',
@@ -387,7 +316,7 @@ stations_info = {
            'RU': 'Бат Ям - Комемьют',
            'ID': '53'},
     9800: {'Code': '9800',
-           'HE': 'ראשל"צ משה-דיין',
+           'HE': 'ראשון לציון-משה דיין',
            'EN': 'R.Moshe-Dayan',
            'AR': 'ريشون لتسيون -موشي ديان',
            'RU': 'Ришон-Ле-Цион Моше Даян',
@@ -491,14 +420,14 @@ stations_info = {
 
 
 def train_station_name_to_id(train_name):
-    return next(idx for idx, train in id_to_station.items() if train == train_name)
+    return next(idx for idx, train in stations_info.items() if train['HE'] == train_name)
 
 
 def train_station_id_to_name(train_id):
-    return id_to_station[train_id]
+    return stations_info[train_id]['HE']
 
 
-def get_available_trains(origin_station_id, dest_station_id, date=None):
+def get_available_trains(origin_station_id, dest_station_id, date: datetime.datetime = None):
     if date is None:
         date = datetime.datetime.now()
 
@@ -514,26 +443,40 @@ def get_available_trains(origin_station_id, dest_station_id, date=None):
     res = requests.get(url)
     try:
         body = res.json()
-        for item in body['Data']['Routes']:
-            for item2 in item['Train']:
-                yield item2
 
     except JSONDecodeError:
-        print('error occured in getting trains')
-        yield res
+        raise AttributeError('No JSON received. some of the request parameters might be wrong')
 
-    except KeyError:
-        print('data is corrupted')
-        yield res
+    if 'Data' not in body or 'Routes' not in body['Data']:
+        raise ValueError('Received JSON has no attribute "Data" or "Routes"')
+
+    for item in body['Data']['Routes']:
+        for item2 in item['Train']:
+            yield item2
 
 
-def decode_and_save_image(raw_b64, dest='image.jpeg'):
+def get_first_available_train(origin_station_id, dest_station_id, date):
+    now = datetime.datetime.now()
+
+    trains = get_available_trains(origin_station_id, dest_station_id, date=date)
+    trains = sorted(list(trains), key=_train_arrival_datetime)
+    trains = [train for train in trains if _train_arrival_datetime(train) > now]
+    if len(trains) == 0:
+        raise RuntimeError('No trains available found in that time')
+
+    return trains[0]
+
+
+def _decode_and_save_image(raw_b64, dest='image.jpeg'):
     image_binary = base64.b64decode(raw_b64)
     with open(dest, 'wb') as f:
         f.write(image_binary)
 
 
-# TODO not done need to filter from date.
+def _train_arrival_datetime(train):
+    return datetime.datetime.strptime(train['ArrivalTime'], "%d/%m/%Y %H:%M:%S")
+
+
 def request_train(user_id,
                   mobile,
                   email,
@@ -553,16 +496,16 @@ def request_train(user_id,
            "&typeId=1")
 
     if train_json is None and (origin_station_id is None or dest_station_id is None or time_for_request is None):
-        raise AttributeError("Either train_json should be supplied or (origin_station_id, dest_station_id, "
-                             "time_for_request)")
-    train = None
+        raise ValueError("Either train_json should be supplied or (origin_station_id, dest_station_id, "
+                         "time_for_request)")
+
     if train_json is not None:
         train = train_json
         origin_station_id = int(train['OrignStation'])
         dest_station_id = int(train['DestinationStation'])
 
     else:
-        pass  # TODO need to implement
+        train = get_first_available_train(origin_station_id, dest_station_id, time_for_request)
 
     payload = [{
         'TrainDate': f"{train['ArrivalTime'].split(' ')[0]} 00:00:00",
@@ -573,8 +516,8 @@ def request_train(user_id,
         'trainNumber': train['Trainno'],
         'departureTime': train['DepartureTime'],
         'arrivalTime': train['ArrivalTime'],
-        'orignStation': id_to_station[origin_station_id],
-        'destinationStation': id_to_station[dest_station_id],
+        'orignStation': stations_info[origin_station_id]['HE'],
+        'destinationStation': stations_info[dest_station_id]['HE'],
         'orignStationNum': origin_station_id,
         'destinationStationNum': dest_station_id,
         'DestPlatform': train['DestPlatform'],
@@ -583,11 +526,18 @@ def request_train(user_id,
 
     res = requests.post(url, data=json.dumps(payload))
     try:
-        body = res.json()['BarcodeImage']
-        decode_and_save_image(body, dest=image_dest)
-        print('photo saved')
+        body = res.json()
 
     except JSONDecodeError:
-        print('error occured')
+        raise AttributeError('No JSON received, some of the arguments must be wrong')
 
-    return res
+    if 'BarcodeImage' not in body:
+        raise ValueError('Cannot find BarcodeImage in the response JSON')
+
+    image_b64_raw = body['BarcodeImage']
+    if image_b64_raw is None:
+        raise RuntimeError(f'barcode image is None, error is {body["Error"]}')
+
+    _decode_and_save_image(image_b64_raw, dest=image_dest)
+
+    return image_dest
