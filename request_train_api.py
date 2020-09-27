@@ -427,7 +427,7 @@ def train_station_id_to_name(train_id):
     return stations_info[train_id]['HE']
 
 
-def get_available_trains(origin_station_id, dest_station_id, date: datetime.datetime = None):
+def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.datetime = None):
     if date is None:
         date = datetime.datetime.now()
 
@@ -455,6 +455,36 @@ def get_available_trains(origin_station_id, dest_station_id, date: datetime.date
             yield item2
 
 
+def get_available_trains(origin_station_id, dest_station_id, date: datetime.datetime = None):
+    now = datetime.datetime.now()
+    if date is None:
+        date = now
+
+    date_formatted = str(date).split(" ")[0].replace("-", "")
+
+    url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
+           f"?OId={origin_station_id}"
+           f"&TId={dest_station_id}"
+           f"&Date={date_formatted}"
+           f"&Hour={date.hour}00"
+           "&isGoing=true"
+           f"&c={str(round(datetime.datetime.now().timestamp(), 3)).replace('.', '')}")
+    res = requests.get(url)
+    try:
+        body = res.json()
+
+    except JSONDecodeError:
+        raise AttributeError('No JSON received. some of the request parameters might be wrong')
+
+    if 'Data' not in body or 'Routes' not in body['Data']:
+        raise ValueError('Received JSON has no attribute "Data" or "Routes"')
+
+    for item in body['Data']['Routes']:
+        for item2 in item['Train']:
+            if _train_arrival_datetime(item2) > now:
+                yield item2
+
+
 def get_first_available_train(origin_station_id, dest_station_id, date):
     now = datetime.datetime.now()
 
@@ -474,7 +504,7 @@ def _decode_and_save_image(raw_b64, dest='image.jpeg'):
 
 
 def _train_arrival_datetime(train):
-    return datetime.datetime.strptime(train['ArrivalTime'], "%d/%m/%Y %H:%M:%S")
+    return datetime.datetime.strptime(train['DepartureTime'], "%d/%m/%Y %H:%M:%S")
 
 
 def request_train(user_id,

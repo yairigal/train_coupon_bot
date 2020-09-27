@@ -79,7 +79,6 @@ class TrainCouponBot:
                     MessageHandler(Filters.text, self.handle_origin_station, pass_user_data=True)],
                 States.HANDLE_DEST_STATION: [MessageHandler(Filters.text, self.handle_dest_station,
                                                             pass_user_data=True)],
-                States.HANDLE_DATE: [MessageHandler(Filters.text, self.handle_date, pass_user_data=True)],
                 States.HANDLE_TRAIN: [MessageHandler(Filters.text, self.handle_train, pass_chat_data=True)],
                 States.WHETHER_TO_CONTINUE: [MessageHandler(Filters.text, self.handle_whether_to_continue,
                                                             pass_chat_data=True)]
@@ -128,7 +127,8 @@ class TrainCouponBot:
         with open(self.USERS_FILE, "w") as cts:
             json.dump(contacts, cts, indent=4)
 
-    def _get_next_week(self):
+    @property
+    def _next_week(self):
         now = datetime.datetime.now()
         for i in range(7):
             yield now + datetime.timedelta(i)
@@ -161,6 +161,9 @@ class TrainCouponBot:
     def _email_valid(email):
         return re.fullmatch(r'.+@.+', email) is not None
 
+    def _get_hour(self, train_time):
+        return train_time.split(' ')[-1].replace(":00", "")
+
     def _reformat_to_readable_date(self, d):
         return re.fullmatch("(.*) \d+:.*", d.ctime()).group(1)
 
@@ -173,6 +176,16 @@ class TrainCouponBot:
 
         else:
             update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+
+    def _reply_train_summary(self, update, context):
+        origin_station = train_api.train_station_id_to_name(context.user_data['origin_station_id'])
+        dest_station = train_api.train_station_id_to_name(context.user_data['dest_station_id'])
+        selected_date = self._reformat_to_readable_date(context.user_data['date'])
+        self._reply_message(update,
+                            f'Displaying trains for\n'
+                            f'{origin_station} -> {dest_station}\n'
+                            f'on {selected_date}',
+                            keyboard=[[i] for i in context.user_data['trains'].keys()])
 
     # Handlers
     @log_user
@@ -242,47 +255,29 @@ class TrainCouponBot:
 
         context.user_data['dest_station_id'] = train_api.train_station_name_to_id(destination_station)
 
-        week_datetimes = self._get_next_week()
-        labels_to_dates = {}
-        labels_to_dates['Today'] = next(week_datetimes)
-        labels_to_dates['Tomorrow'] = next(week_datetimes)
-        labels_to_dates.update({self._reformat_to_readable_date(date): date for date in week_datetimes})
-        context.user_data['dates'] = labels_to_dates
+        for day in self._next_week:
+            try:
+                trains = list(train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
+                                                             dest_station_id=context.user_data['dest_station_id'],
+                                                             date=day))
+                if len(trains) > 0:
+                    trains = {
+                        f"{self._get_hour(train['DepartureTime'])} - {self._get_hour(train['ArrivalTime'])}": train
+                        for train in trains}
+                    context.user_data['trains'] = trains
+                    context.user_data['date'] = day
+                    self._reply_train_summary(update, context)
+                    return States.HANDLE_TRAIN
 
-        self._reply_message(update,
-                            'Choose a day',
-                            keyboard=[[i] for i in labels_to_dates.keys()])
-        return States.HANDLE_DATE
+            except (ValueError, AttributeError):
+                self._reply_message(update,
+                                    'An error occurred on the server, Please try again')
+                return self.handle_start(update, context)
 
-    @log_user
-    def handle_date(self, update, context):
-        if update.message.text not in context.user_data['dates'].keys():
+        else:
             self._reply_message(update,
-                                'Please choose a date from the dates below',
-                                keyboard=[[i] for i in context.user_data['dates'].keys()])
-            return States.HANDLE_DATE
-
-        date = context.user_data['dates'][update.message.text]
-        try:
-            res = train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
-                                                 dest_station_id=context.user_data['dest_station_id'],
-                                                 date=date)
-        except (ValueError, AttributeError):
-            self._reply_message(update,
-                                'An error occurred on the server, Please retry again')
-            return self.handle_start(update, context)
-
-        trains = {f"{train['DepartureTime']} - {train['ArrivalTime']}": train for train in res}
-        if len(trains) == 0:
-            self._reply_message(update,
-                                f'No trains available for {self._reformat_to_readable_date(date)}, '
-                                f'Please pick a new date',
-                                keyboard=[[i] for i in context.user_data['dates'].keys()])
-            return States.HANDLE_DATE
-
-        context.user_data['trains'] = trains
-        self._reply_message(update, 'Pick a train', keyboard=[[i] for i in trains.keys()])
-        return States.HANDLE_TRAIN
+                                "No trains are available for the next week, closing conversation")
+            return self.cancel(update, context)
 
     @log_user
     def handle_train(self, update, context):
@@ -315,10 +310,8 @@ class TrainCouponBot:
             self._reply_message(update,
                                 'No barcode image received from the server. This might happen if the same seat is '
                                 'ordered twice. Please pick another seat')
-            self._reply_message(update,
-                                'Choose a day',
-                                keyboard=[[i] for i in context.user_data['dates'].keys()])
-            return States.HANDLE_DATE
+            self._reply_train_summary(update, context)
+            return States.HANDLE_TRAIN
 
         with open(image_path, 'rb') as f:
             update.message.bot.send_chat_action(chat_id=update.effective_message.chat_id,
@@ -347,10 +340,8 @@ class TrainCouponBot:
             return States.HANDLE_ORIGIN_STATION
 
         elif answer == 'Order the same':
-            self._reply_message(update,
-                                'Choose time',
-                                keyboard=[[i] for i in context.user_data['dates'].keys()])
-            return States.HANDLE_DATE
+            self._reply_train_summary(update, context)
+            return States.HANDLE_TRAIN
 
         return self.cancel(update, context)
 
