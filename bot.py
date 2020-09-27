@@ -307,9 +307,7 @@ class TrainCouponBot:
             # error with the arguments passed
             self._reply_message(update,
                                 'Error occurred in the server, some details might be wrong, please enter them again')
-            self._reply_message(update,
-                                "Please enter your ID")
-            return States.ID
+            return self.handle_start(update, context)
 
         except (ValueError, RuntimeError) as e:
             # No bardcode image found
