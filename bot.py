@@ -7,6 +7,7 @@ from typing import List
 from functools import wraps
 from abc import ABCMeta, abstractmethod
 
+from telegram.ext.dispatcher import run_async
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
 
@@ -246,6 +247,7 @@ class TrainCouponBot:
         return States.HANDLE_DEST_STATION
 
     @log_user
+    @run_async
     def handle_dest_station(self, update, context):
         destination_station = update.message.text
         if destination_station not in self.train_stations:
@@ -281,6 +283,7 @@ class TrainCouponBot:
             return self.cancel(update, context)
 
     @log_user
+    @run_async
     def handle_train(self, update, context):
         train_date = update.message.text
         if train_date not in context.user_data['trains'].keys():
