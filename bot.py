@@ -147,7 +147,7 @@ class TrainCouponBot:
 
     @property
     def train_stations(self):
-        return train_api.id_to_station.values()
+        return [train_info['HE'] for train_info in train_api.stations_info.values()]
 
     @staticmethod
     def _id_valid(id_arg):
@@ -318,17 +318,15 @@ class TrainCouponBot:
             return States.WHETHER_TO_CONTINUE
 
         if answer == 'Order Different Train':
-            update.message.reply_text('Choose origin station',
-                                      reply_markup=ReplyKeyboardMarkup(
-                                          keyboard=[[i] for i in train_api.id_to_station.values()],
-                                          one_time_keyboard=True))
+            self._reply_message(update,
+                                'Choose origin station',
+                                keyboard=[[i] for i in self.train_stations])
             return States.HANDLE_ORIGIN_STATION
 
         elif answer == 'Order the same':
-            update.message.reply_text('Choose time',
-                                      reply_markup=ReplyKeyboardMarkup(
-                                          keyboard=[[i] for i in context.user_data['dates'].keys()],
-                                          one_time_keyboard=True))
+            self._reply_message(update,
+                                'Choose time',
+                                keyboard=[[i] for i in context.user_data['dates'].keys()])
             return States.HANDLE_DATE
 
         return self.cancel(update, context)
@@ -346,7 +344,7 @@ if __name__ == '__main__':
         config = json.load(config_file)
 
     # Read token
-    with open("token") as token:
-        TOKEN = token.read().strip('\n')
+    with open("token") as token_file:
+        token = token_file.read().strip('\n')
 
-    TrainCouponBot(token=TOKEN, **config).run()
+    TrainCouponBot(token=token, **config).run()
