@@ -161,6 +161,9 @@ class TrainCouponBot:
     def _email_valid(email):
         return re.fullmatch(r'.+@.+', email) is not None
 
+    def _get_hour(self, train_time):
+        return train_time.split(' ')[-1].replace(":00", "")
+
     def _reformat_to_readable_date(self, d):
         return re.fullmatch("(.*) \d+:.*", d.ctime()).group(1)
 
@@ -173,6 +176,16 @@ class TrainCouponBot:
 
         else:
             update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+
+    def _reply_train_summary(self, update, context):
+        origin_station = train_api.train_station_id_to_name(context.user_data['origin_station_id'])
+        dest_station = train_api.train_station_id_to_name(context.user_data['dest_station_id'])
+        selected_date = self._reformat_to_readable_date(context.user_data['date'])
+        self._reply_message(update,
+                            f'Displaying trains for\n'
+                            f'{origin_station} -> {dest_station}\n'
+                            f'on {selected_date}',
+                            keyboard=[[i] for i in context.user_data['trains'].keys()])
 
     # Handlers
     @log_user
@@ -244,17 +257,16 @@ class TrainCouponBot:
 
         for day in self._next_week:
             try:
-                trains = train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
-                                                        dest_station_id=context.user_data['dest_station_id'],
-                                                        date=day)
-
+                trains = list(train_api.get_available_trains(origin_station_id=context.user_data['origin_station_id'],
+                                                             dest_station_id=context.user_data['dest_station_id'],
+                                                             date=day))
                 if len(trains) > 0:
-                    trains = {f"{train['DepartureTime'].split(' ')[-1]} - {train['ArrivalTime'].split(' ')[-1]}": train
-                              for train in trains}
+                    trains = {
+                        f"{self._get_hour(train['DepartureTime'])} - {self._get_hour(train['ArrivalTime'])}": train
+                        for train in trains}
                     context.user_data['trains'] = trains
-                    self._reply_message(update,
-                                        f'Displaying trains for {self._reformat_to_readable_date(day)}',
-                                        keyboard=[[i] for i in trains.keys()])
+                    context.user_data['date'] = day
+                    self._reply_train_summary(update, context)
                     return States.HANDLE_TRAIN
 
             except (ValueError, AttributeError):
@@ -330,9 +342,7 @@ class TrainCouponBot:
             return States.HANDLE_ORIGIN_STATION
 
         elif answer == 'Order the same':
-            self._reply_message(update,
-                                f'Please choose a train',
-                                keyboard=[[i] for i in context.user_data['trains'].keys()])
+            self._reply_train_summary(update, context)
             return States.HANDLE_TRAIN
 
         return self.cancel(update, context)
