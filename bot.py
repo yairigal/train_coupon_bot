@@ -8,7 +8,7 @@ from functools import wraps
 from abc import ABCMeta, abstractmethod
 
 from telegram.ext.dispatcher import run_async
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
 
 import request_train_api as train_api
@@ -182,11 +182,19 @@ class TrainCouponBot:
         origin_station = train_api.train_station_id_to_name(context.user_data['origin_station_id'])
         dest_station = train_api.train_station_id_to_name(context.user_data['dest_station_id'])
         selected_date = self._reformat_to_readable_date(context.user_data['date'])
-        self._reply_message(update,
-                            f'Displaying trains for\n'
-                            f'{origin_station} -> {dest_station}\n'
-                            f'on {selected_date}',
-                            keyboard=[[i] for i in context.user_data['trains'].keys()])
+        # self._reply_message(update,
+        #                     f'Displaying trains for\n'
+        #                     f'{origin_station} -> {dest_station}\n'
+        #                     f'on {selected_date}',
+        #                     keyboard=[[i] for i in context.user_data['trains'].keys()])
+        keyboard = [
+            [InlineKeyboardButton(label)] for label, train in context.user_data['trains'].items()
+        ]
+        update.message.reply_text(f'Displaying trains for\n'
+                                  f'{origin_station} -> {dest_station}\n'
+                                  f'on {selected_date}',
+                                  reply_markup=InlineKeyboardMarkup(
+                                      inline_keyboard=keyboard))
 
     # Handlers
     @log_user
