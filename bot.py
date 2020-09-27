@@ -148,7 +148,7 @@ class TrainCouponBot:
 
     @property
     def train_stations(self):
-        return [train_info['HE'] for train_info in train_api.stations_info.values()]
+        return sorted([train_info['HE'] for train_info in train_api.stations_info.values()])
 
     @staticmethod
     def _id_valid(id_arg):
