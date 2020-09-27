@@ -1,14 +1,14 @@
+import re
 import os
 import json
 import logging
 import datetime
-import re
-from abc import ABCMeta, abstractmethod
-from functools import wraps
 from typing import List
+from functools import wraps
+from abc import ABCMeta, abstractmethod
 
-from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction)
-from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler)
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
 
 import request_train_api as train_api
 
@@ -122,7 +122,7 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as cts:
             contacts = json.load(cts)
 
-        contacts[user.username] = str(user.id)
+        contacts[user.id] = user.username
 
         with open(self.USERS_FILE, "w") as cts:
             json.dump(contacts, cts, indent=4)
@@ -138,12 +138,12 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as f:
             users = json.load(f)
 
-        for name, id in users.items():
+        for id, name in users.items():
             try:
                 self.updater.bot.sendMessage(int(id), message)
 
             except BaseException as e:
-                self.logger.debug(f'Failed to broadcase message to {name} due to {e}')
+                self.logger.debug(f'Failed to broadcast message to {name} due to {e}')
 
     @property
     def train_stations(self):
@@ -198,11 +198,11 @@ class TrainCouponBot:
     def handle_id(self, update, context):
         user_id = update.message.text
         if not self._id_valid(user_id):
-            self._reply_message(update, 'id is not valid, please enter valid id')
+            self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.ID
 
         context.user_data['id'] = user_id
-        self._reply_message(update, 'Please enter your phone number')
+        self._reply_message(update, f'Success! ID is {user_id}. Please enter your phone number')
         return States.PHONE
 
     @log_user
@@ -213,7 +213,7 @@ class TrainCouponBot:
             return States.PHONE
 
         context.user_data['phone'] = phone
-        update.message.reply_text('Please enter your email address', reply_markup=ReplyKeyboardRemove())
+        self._reply_message(update, f'Success! phone number is {phone}. Please enter your email address')
         return States.EMAIL
 
     @log_user
@@ -225,7 +225,7 @@ class TrainCouponBot:
 
         context.user_data['email'] = email
         self._reply_message(update,
-                            'Choose origin station',
+                            f'Success! email address is {email}. Please choose an origin station from the list below',
                             keyboard=[[i] for i in self.train_stations])
         return States.HANDLE_ORIGIN_STATION
 
@@ -240,7 +240,8 @@ class TrainCouponBot:
 
         context.user_data['origin_station_id'] = train_api.train_station_name_to_id(origin_station)
         self._reply_message(update,
-                            'Choose destination',
+                            f'Success! origin station picked is {origin_station}.\n'
+                            f'Please choose a destination station from the list below',
                             keyboard=[[i] for i in self.train_stations])
         return States.HANDLE_DEST_STATION
 
@@ -292,6 +293,7 @@ class TrainCouponBot:
 
         image_path = 'image.jpeg'
         try:
+            self._reply_message(update, "ordering coupon...")
             train_api.request_train(user_id=context.user_data['id'],
                                     mobile=context.user_data['phone'],
                                     email=context.user_data['email'],
