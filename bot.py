@@ -148,7 +148,7 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as cts:
             contacts = json.load(cts)
 
-        contacts[user.id] = user.username
+        contacts[str(user.id)] = user.username
 
         with open(self.USERS_FILE, "w") as cts:
             json.dump(contacts, cts, indent=4)
