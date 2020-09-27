@@ -310,9 +310,7 @@ class TrainCouponBot:
             self._reply_message(update,
                                 'No barcode image received from the server. This might happen if the same seat is '
                                 'ordered twice. Please pick another seat')
-            self._reply_message(update,
-                                f'Please choose different train',
-                                keyboard=[[i] for i in context.user_data['trains'].keys()])
+            self._reply_train_summary(update, context)
             return States.HANDLE_TRAIN
 
         with open(image_path, 'rb') as f:
