@@ -572,5 +572,5 @@ if __name__ == '__main__':
     else:
         with open("token") as token_file:
             token = token_file.read().strip('\n')
-
-    TrainCouponBot(token=token, **config).run()
+    port = os.getenv('PORT')
+    TrainCouponBot(token=token, port=port, **config).run()
