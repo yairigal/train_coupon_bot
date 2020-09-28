@@ -58,7 +58,7 @@ class TrainCouponBot:
         [SAVED_TRAINS]
     ]
 
-    def __init__(self, token, polling, num_threads, host, port, logger_level=logging.INFO):
+    def __init__(self, token, polling, num_threads, host, port, logger_level=logging.INFO, *args, **kwargs):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
