@@ -73,10 +73,6 @@ class TrainCouponBot:
         logger.setLevel(logger_level)
         formatter = logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-
         file_handler = logging.handlers.RotatingFileHandler(self.LOG_FILE, maxBytes=2 ** 20, backupCount=2)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -565,12 +561,13 @@ if __name__ == '__main__':
     with open('config.json', encoding='utf8') as config_file:
         config = json.load(config_file)
 
-    # Read token
-    if not os.path.exists('token'):
+    if config['deploy']:
         token = os.getenv('TOKEN')
+        port = os.getenv('PORT')
+        TrainCouponBot(token=token, port=port, **config).run()
 
     else:
         with open("token") as token_file:
             token = token_file.read().strip('\n')
-    port = os.getenv('PORT')
-    TrainCouponBot(token=token, port=port, **config).run()
+
+        TrainCouponBot(token=token, **config).run()

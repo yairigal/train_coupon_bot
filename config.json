@@ -1,5 +1,7 @@
 {
+  "deploy": true,
   "polling": false,
   "num_threads": 100,
+  "port": 7559,
   "host": "https://coupon-train-bot.herokuapp.com/"
 }
