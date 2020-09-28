@@ -1,10 +1,11 @@
 import re
 import os
+import time
 import json
 import logging
 import datetime
-import time
 from typing import List
+import logging.handlers
 from functools import wraps
 
 from telegram.ext.dispatcher import run_async
@@ -42,6 +43,7 @@ class States:
 
 
 class TrainCouponBot:
+    LOG_FILE = 'bot.log'
     USERS_FILE = 'contacts.json'
 
     EDIT_ID = 'Edit ID'
@@ -63,9 +65,22 @@ class TrainCouponBot:
         self.port = port
 
         # Enable logging
-        logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                            level=logger_level)
-        self.logger = logging.getLogger(__name__)
+        self.logger = self._configure_logger(logger_level)
+
+    def _configure_logger(self, logger_level):
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logger_level)
+        formatter = logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+        file_handler = logging.handlers.RotatingFileHandler(self.LOG_FILE, maxBytes=2 ** 20, backupCount=2)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        return logger
 
     def run(self):
         # Create the EventHandler and pass it your bot's token.
@@ -283,9 +298,6 @@ class TrainCouponBot:
 
         context.user_data['email'] = email
         self._prompt_main_menu(update, context)
-        # self._reply_message(update,
-        #                     f'Success! email address is {email}. Please choose an origin station from the list below',
-        #                     keyboard=[[i] for i in self.train_stations])
         return States.MAIN
 
     def handle_main_state(self, update, context):
