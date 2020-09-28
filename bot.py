@@ -563,11 +563,10 @@ if __name__ == '__main__':
 
     if config['deploy']:
         token = os.getenv('TOKEN')
-        port = os.getenv('PORT')
-        TrainCouponBot(token=token, port=port, **config).run()
+        config['port'] = os.getenv('PORT')
 
     else:
         with open("token") as token_file:
             token = token_file.read().strip('\n')
 
-        TrainCouponBot(token=token, **config).run()
+    TrainCouponBot(token=token, **config).run()
