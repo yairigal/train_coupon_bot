@@ -62,7 +62,7 @@ class TrainCouponBot:
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
-        self.host= host
+        self.host = host
         self.port = port
 
         # Enable logging
@@ -566,7 +566,11 @@ if __name__ == '__main__':
         config = json.load(config_file)
 
     # Read token
-    with open("token") as token_file:
-        token = token_file.read().strip('\n')
+    if not os.path.exists('token'):
+        token = os.getenv('TOKEN')
+
+    else:
+        with open("token") as token_file:
+            token = token_file.read().strip('\n')
 
     TrainCouponBot(token=token, **config).run()
