@@ -58,10 +58,11 @@ class TrainCouponBot:
         [SAVED_TRAINS]
     ]
 
-    def __init__(self, token, polling, num_threads, port, logger_level=logging.INFO):
+    def __init__(self, token, polling, num_threads, host, port, logger_level=logging.INFO):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
+        self.host= host
         self.port = port
 
         # Enable logging
@@ -124,12 +125,11 @@ class TrainCouponBot:
 
         else:
             # webhook
-            # updater.start_webhook(listen='127.0.0.1',
-            #                       port=self.port,
-            #                       url_path=URL_PATH + self.token)
-            # updater.bot.set_webhook(url=BASE_URL + URL_PATH + self.token,
-            #                         max_connections=100)
-            pass
+            self.updater.start_webhook(listen='0.0.0.0',
+                                       port=self.port,
+                                       url_path=self.token)
+            self.updater.bot.set_webhook(url=self.host + self.token,
+                                         max_connections=100)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
