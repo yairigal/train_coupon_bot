@@ -419,6 +419,16 @@ stations_info = {
            'ID': '70'}}
 
 
+def _get_hour(train_time):
+    return train_time.split(' ')[-1].replace(":00", "")
+
+
+def get_train_printable_travel_time(train_json):
+    departure_hour = _get_hour(train_json['DepartureTime'])
+    arrival_hour = _get_hour(train_json['ArrivalTime'])
+    return (f"{departure_hour} - {arrival_hour}")
+
+
 def train_station_name_to_id(train_name):
     return next(idx for idx, train in stations_info.items() if train['HE'] == train_name)
 
@@ -461,12 +471,13 @@ def get_available_trains(origin_station_id, dest_station_id, date: datetime.date
         date = now
 
     date_formatted = str(date).split(" ")[0].replace("-", "")
+    current_hour = "00" if date.hour == 0 else date.hour
 
     url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
            f"?OId={origin_station_id}"
            f"&TId={dest_station_id}"
            f"&Date={date_formatted}"
-           f"&Hour={date.hour}00"
+           f"&Hour={current_hour}00"
            "&isGoing=true"
            f"&c={str(round(datetime.datetime.now().timestamp(), 3)).replace('.', '')}")
     res = requests.get(url)
@@ -566,7 +577,7 @@ def request_train(user_id,
 
     image_b64_raw = body['BarcodeImage']
     if image_b64_raw is None:
-        raise RuntimeError(f'barcode image is None, error is {body["Error"]}')
+        raise RuntimeError(f'barcode image is None, error is {body["ErrorDescription"]}')
 
     _decode_and_save_image(image_b64_raw, dest=image_dest)
 
