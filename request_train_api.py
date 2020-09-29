@@ -442,12 +442,13 @@ def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.
         date = datetime.datetime.now()
 
     date_formatted = str(date).split(" ")[0].replace("-", "")
+    current_hour = f"0{date.hour}" if date.hour < 10 else date.hour
 
     url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
            f"?OId={origin_station_id}"
            f"&TId={dest_station_id}"
            f"&Date={date_formatted}"
-           f"&Hour={date.hour}00"
+           f"&Hour={current_hour}00"
            "&isGoing=true"
            f"&c={str(round(datetime.datetime.now().timestamp(), 3)).replace('.', '')}")
     res = requests.get(url)
@@ -471,7 +472,7 @@ def get_available_trains(origin_station_id, dest_station_id, date: datetime.date
         date = now
 
     date_formatted = str(date).split(" ")[0].replace("-", "")
-    current_hour = "00" if date.hour == 0 else date.hour
+    current_hour = f"0{date.hour}" if date.hour < 10 else date.hour
 
     url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
            f"?OId={origin_station_id}"
