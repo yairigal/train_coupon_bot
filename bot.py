@@ -4,6 +4,7 @@ import time
 import json
 import logging
 import datetime
+import traceback
 from typing import List
 import logging.handlers
 from functools import wraps
@@ -441,8 +442,9 @@ class TrainCouponBot:
                                     train_json=current_train,
                                     image_dest=image_path)
 
-        except AttributeError:
+        except AttributeError as e:
             # error with the arguments passed
+            traceback.print_exc()
             self._reply_message(update,
                                 'Error occurred in the server, some details might be wrong, please enter them again')
             print('reading error.html')
