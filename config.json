@@ -1,5 +1,4 @@
 {
-  "polling": true,
-  "num_threads": 100,
-  "port": 7559
+  "polling": false,
+  "num_threads": 100
 }

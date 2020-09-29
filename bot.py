@@ -563,8 +563,8 @@ if __name__ == '__main__':
     with open('config.json', encoding='utf8') as config_file:
         config = json.load(config_file)
 
-    # Read token
-    with open("token") as token_file:
-        token = token_file.read().strip('\n')
+    config['token'] = os.getenv('TOKEN')
+    config['port'] = os.getenv('PORT')
+    config['host'] = f"http(s)://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/"
 
-    TrainCouponBot(token=token, **config).run()
+    TrainCouponBot(**config).run()
