@@ -72,11 +72,8 @@ class TrainCouponBot:
         logger = logging.getLogger(__name__)
         logger.setLevel(logger_level)
         formatter = logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-        file_handler = logging.handlers.RotatingFileHandler(self.LOG_FILE, maxBytes=2 ** 20, backupCount=2)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
         return logger
 
     def run(self):
@@ -132,6 +129,7 @@ class TrainCouponBot:
         # start_polling() is non-blocking and will stop the bot gracefully.
         self.logger.info(f"Bot started running, polling={self.polling}, number of threads={self.num_threads}, "
                          f"port={self.port}")
+        self.logger.info(f"current timezone is {datetime.datetime.now()}")
         self.updater.idle()
 
     def _save_user(self, user):
@@ -259,7 +257,6 @@ class TrainCouponBot:
     # Handlers
     @log_user
     def handle_start(self, update, context):
-        print(datetime.datetime.now())
         self._save_user(update.message.from_user)
         update.message.reply_text('Please enter your ID', reply_markup=ReplyKeyboardRemove())
         return States.ID
