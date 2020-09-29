@@ -565,7 +565,7 @@ if __name__ == '__main__':
 
     config['token'] = os.getenv('TOKEN')
     config['port'] = os.getenv('PORT')
-    config['host'] = f"https://{os.getenv('APPNAME')}.herokuapp.com/"
+    config['host'] = os.getenv('HOST')
     
     print(config)
 
