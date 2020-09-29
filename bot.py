@@ -259,6 +259,7 @@ class TrainCouponBot:
     # Handlers
     @log_user
     def handle_start(self, update, context):
+        print(datetime.datetime.now())
         self._save_user(update.message.from_user)
         update.message.reply_text('Please enter your ID', reply_markup=ReplyKeyboardRemove())
         return States.ID
