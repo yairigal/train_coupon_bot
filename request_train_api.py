@@ -566,7 +566,7 @@ def request_train(user_id,
         'TrainOrder': 1
     }]
 
-    res = requests.post(url, data=json.dumps(payload))
+    res = requests.post(url, data=json.dumps(payload), headers={'en-US,en;q=0.9,he-IL;q=0.8,he;q=0.7'})
     try:
         body = res.json()
 
