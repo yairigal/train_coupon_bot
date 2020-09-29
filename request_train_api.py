@@ -571,6 +571,9 @@ def request_train(user_id,
         body = res.json()
 
     except JSONDecodeError:
+        with open('error.html', 'w') as f:
+            f.write(res.content)
+
         raise AttributeError('No JSON received, some of the arguments must be wrong')
 
     if 'BarcodeImage' not in body:
