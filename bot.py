@@ -450,7 +450,7 @@ class TrainCouponBot:
             print('reading error.html')
             if os.path.exists('error.html'):
                 print('error html exists')
-                with open('error.html','r') as f:
+                with open('error.html','rb') as f:
                     print('replying error.html')
                     update.message.reply_document(f)
 
