@@ -566,5 +566,7 @@ if __name__ == '__main__':
     config['token'] = os.getenv('TOKEN')
     config['port'] = os.getenv('PORT')
     config['host'] = f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/"
+    
+    print(config)
 
     TrainCouponBot(**config).run()
