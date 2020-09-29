@@ -445,10 +445,13 @@ class TrainCouponBot:
             # error with the arguments passed
             self._reply_message(update,
                                 'Error occurred in the server, some details might be wrong, please enter them again')
+            print('reading error.html')
             if os.path.exists('error.html'):
+                print('error html exists')
                 with open('error.html','r') as f:
+                    print('replying error.html')
                     update.message.reply_document(f)
-                    
+
             return self.handle_start(update, context)
 
         except (ValueError, RuntimeError) as e:
