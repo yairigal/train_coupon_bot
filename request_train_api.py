@@ -575,7 +575,7 @@ def request_train(user_id,
         print('crashed in json')
         with open('error.html', 'w') as f:
             print('saving error.html')
-            f.write(res.content)
+            f.write(res.content.decode())
 
         print('raising attribute error')
         raise AttributeError('No JSON received, some of the arguments must be wrong')
