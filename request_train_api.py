@@ -7,7 +7,7 @@ from json import JSONDecodeError
 
 import requests
 
-proxies = {'https': os.getenv('HTTPS_PROXY')}
+proxies = {'https': os.getenv('RAIL_PROXY')}
 
 stations_info = {
     3700: {'Code': '3700',
