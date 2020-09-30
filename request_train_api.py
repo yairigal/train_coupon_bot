@@ -2,9 +2,12 @@
 import json
 import base64
 import datetime
+import os
 from json import JSONDecodeError
 
 import requests
+
+proxies = {'http': os.getenv('HTTP_PROXY')}
 
 stations_info = {
     3700: {'Code': '3700',
@@ -566,8 +569,7 @@ def request_train(user_id,
         'TrainOrder': 1
     }]
 
-    res = requests.post(url, data=json.dumps(payload), headers={'accept-language': 'en-US,en;q=0.9,he-IL;q=0.8,'
-                                                                                   'he;q=0.7'})
+    res = requests.post(url, data=json.dumps(payload), proxies=proxies)
     try:
         body = res.json()
 
