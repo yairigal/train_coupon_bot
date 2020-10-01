@@ -1,13 +1,13 @@
 # coding=utf-8
+import os
 import json
 import base64
 import datetime
-import os
 from json import JSONDecodeError
 
 import requests
 
-proxies = {'https': os.getenv('RAIL_PROXY')}
+proxies = {'https': os.environ['RAIL_PROXY']}
 
 stations_info = {
     3700: {'Code': '3700',
@@ -574,12 +574,6 @@ def request_train(user_id,
         body = res.json()
 
     except JSONDecodeError:
-        print('crashed in json')
-        with open('error.html', 'w') as f:
-            print('saving error.html')
-            f.write(res.content.decode())
-
-        print('raising attribute error')
         raise AttributeError('No JSON received, some of the arguments must be wrong')
 
     if 'BarcodeImage' not in body:
