@@ -568,12 +568,18 @@ class TrainCouponBot:
 
 
 if __name__ == '__main__':
-    with open('config.json', encoding='utf8') as config_file:
-        config = json.load(config_file)
+    if os.path.exists('config.json'):
+        with open('config.json', encoding='utf8') as config_file:
+            config = json.load(config_file)
 
-    config['token'] = os.getenv('TOKEN')
-    config['port'] = os.getenv('PORT')
-    config['host'] = os.getenv('HOST')
+    else:
+        config = {
+            'token': os.environ['TOKEN'],
+            'port': os.environ['PORT'],
+            'host': os.environ['HOST'],
+            'polling': os.environ['POLLING'],
+            'num_threads': os.environ['NUM_THREADS']
+        }
     
     print(config)
 
