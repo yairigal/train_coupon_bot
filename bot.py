@@ -26,6 +26,17 @@ def log_user(handler_function):
     return wrapping_handler_function
 
 
+def handle_back(handle_state_function):
+    def handler_wrapper(bot_obj, update, context, *args, **kwargs):
+        if hasattr(update, 'message') and update.message.text == bot_obj.BACK:
+            bot_obj._prompt_main_menu(update, context)
+            return States.MAIN
+
+        return handle_state_function(bot_obj, update, context, *args, **kwargs)
+
+    return handler_wrapper
+
+
 class States:
     (ID,
      PHONE,
@@ -53,6 +64,8 @@ class TrainCouponBot:
     EDIT_EMAIL = 'Edit Email'
     ORDER_COUPON = 'Order a coupon'
     SAVED_TRAINS = 'Saved trains'
+
+    BACK = 'Return to main menu'
 
     MAIN_STATE_OPTIONS = [
         [EDIT_ID, EDIT_PHONE],
@@ -117,7 +130,6 @@ class TrainCouponBot:
                 States.SAVED_TRAINS: [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
             },
             fallbacks=[CommandHandler('stop', self.cancel, pass_user_data=True)],
-
             allow_reentry=True
         )
 
@@ -174,6 +186,7 @@ class TrainCouponBot:
                 self.updater.bot.sendMessage(int(id), message)
 
             except BaseException as e:
+                traceback.print_exc()
                 self.logger.debug(f'Failed to broadcast message to {name} due to {e}')
 
     @property
@@ -200,7 +213,7 @@ class TrainCouponBot:
             if not inline_keyboard:
                 update.message.reply_text(message,
                                           reply_markup=ReplyKeyboardMarkup(
-                                              keyboard=keyboard,
+                                              keyboard=[[self.BACK]] + keyboard,
                                               one_time_keyboard=True))
 
             else:
@@ -376,6 +389,7 @@ class TrainCouponBot:
         return States.MAIN
 
     @log_user
+    @handle_back
     def handle_origin_station(self, update, context):
         origin_station = update.message.text
         if origin_station not in self.train_stations:
@@ -393,6 +407,7 @@ class TrainCouponBot:
 
     @log_user
     @run_async
+    @handle_back
     def handle_dest_station(self, update, context):
         destination_station = update.message.text
         if destination_station not in self.train_stations:
@@ -416,6 +431,7 @@ class TrainCouponBot:
                     return States.HANDLE_TRAIN
 
             except (ValueError, AttributeError) as e:
+                traceback.print_exc()
                 self.logger.error(f'exception occurred in get_available_trains {e}')
                 self._reply_message(update, 'An error occurred on the server, Please try again')
                 self._prompt_main_menu(update, context)
@@ -429,6 +445,7 @@ class TrainCouponBot:
 
     @log_user
     @run_async
+    @handle_back
     def handle_train(self, update, context):
         train_date = update.message.text
         if train_date not in context.user_data['trains'].keys():
@@ -456,6 +473,7 @@ class TrainCouponBot:
             return self.handle_start(update, context)
 
         except (ValueError, RuntimeError) as e:
+            traceback.print_exc()
             # No bardcode image found
             self.logger.error(f'no barcode image received, error={e}')
             self._reply_message(update,
@@ -472,6 +490,7 @@ class TrainCouponBot:
         return States.SAVE_TRAIN
 
     @log_user
+    @handle_back
     def handle_save_train(self, update, context):
         option = update.message.text.lower()
         if option not in ['yes', 'no']:
@@ -493,6 +512,7 @@ class TrainCouponBot:
             return States.MAIN
 
     @log_user
+    @handle_back
     def handle_saved_trains(self, update, context):
         selected_train = update.message.text
         saved_trains = self._saved_trains(context, printable=True)
@@ -524,6 +544,7 @@ class TrainCouponBot:
                                                               date=request_train_datetime)
 
         except (AttributeError, ValueError) as e:
+            traceback.print_exc()
             self.logger.error(f'exception occurred in get_available_trains {e}')
             self._reply_message(update, 'Error occurred please try again')
             self._prompt_main_menu(update, context)
@@ -553,6 +574,7 @@ class TrainCouponBot:
             self._replay_coupon(context, selected_train, 'image.jpeg', update)
 
         except (AttributeError, ValueError, RuntimeError) as e:
+            traceback.print_exc()
             self.logger.error(f'exception occurred in request_train {e}')
             self._reply_message(update, 'Error occurred please try again')
 
