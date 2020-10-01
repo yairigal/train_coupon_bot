@@ -1,10 +1,13 @@
 # coding=utf-8
+import os
 import json
 import base64
 import datetime
 from json import JSONDecodeError
 
 import requests
+
+proxies = {'https': os.getenv('RAIL_PROXY')}
 
 stations_info = {
     3700: {'Code': '3700',
@@ -566,7 +569,7 @@ def request_train(user_id,
         'TrainOrder': 1
     }]
 
-    res = requests.post(url, data=json.dumps(payload))
+    res = requests.post(url, data=json.dumps(payload), proxies=proxies)
     try:
         body = res.json()
 
@@ -578,7 +581,7 @@ def request_train(user_id,
 
     image_b64_raw = body['BarcodeImage']
     if image_b64_raw is None:
-        raise RuntimeError(f'barcode image is None, error is {body["ErrorDescription"]}')
+        raise RuntimeError(f'barcode image is None, error is `{body["voutcher"]["ErrorDescription"]}`')
 
     _decode_and_save_image(image_b64_raw, dest=image_dest)
 

@@ -2,8 +2,10 @@ import re
 import os
 import time
 import json
+import signal
 import logging
 import datetime
+import traceback
 from typing import List
 import logging.handlers
 from functools import wraps
@@ -67,6 +69,11 @@ class TrainCouponBot:
 
         # Enable logging
         self.logger = self._configure_logger(logger_level)
+
+        signal.signal(signal.SIGTERM, self._sigterm_handler)
+
+    def _sigterm_handler(self, *args, **kwargs):
+        self.logger.warning('sigterm received')
 
     def _configure_logger(self, logger_level):
         logger = logging.getLogger(__name__)
@@ -441,8 +448,9 @@ class TrainCouponBot:
                                     train_json=current_train,
                                     image_dest=image_path)
 
-        except AttributeError:
+        except AttributeError as e:
             # error with the arguments passed
+            traceback.print_exc()
             self._reply_message(update,
                                 'Error occurred in the server, some details might be wrong, please enter them again')
             return self.handle_start(update, context)
@@ -560,11 +568,19 @@ class TrainCouponBot:
 
 
 if __name__ == '__main__':
-    with open('config.json', encoding='utf8') as config_file:
-        config = json.load(config_file)
+    if os.path.exists('config.json'):
+        with open('config.json', encoding='utf8') as config_file:
+            config = json.load(config_file)
 
-    # Read token
-    with open("token") as token_file:
-        token = token_file.read().strip('\n')
+    else:
+        config = {
+            'token': os.environ['TOKEN'],
+            'port': os.environ['PORT'],
+            'host': os.environ['HOST'],
+            'polling': bool(os.environ['POLLING']),
+            'num_threads': int(os.environ['NUM_THREADS'])
+        }
 
-    TrainCouponBot(token=token, **config).run()
+    print(config)
+
+    TrainCouponBot(**config).run()
