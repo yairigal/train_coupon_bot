@@ -577,10 +577,10 @@ if __name__ == '__main__':
             'token': os.environ['TOKEN'],
             'port': os.environ['PORT'],
             'host': os.environ['HOST'],
-            'polling': os.environ['POLLING'],
-            'num_threads': os.environ['NUM_THREADS']
+            'polling': bool(os.environ['POLLING']),
+            'num_threads': int(os.environ['NUM_THREADS'])
         }
-    
+
     print(config)
 
     TrainCouponBot(**config).run()
