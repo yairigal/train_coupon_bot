@@ -29,8 +29,7 @@ def log_user(handler_function):
 def handle_back(handle_state_function):
     def handler_wrapper(bot_obj, update, context, *args, **kwargs):
         if hasattr(update, 'message') and update.message.text == bot_obj.BACK:
-            bot_obj._prompt_main_menu(update, context)
-            return States.MAIN
+            return bot_obj._move_to_main_state(update, context)
 
         return handle_state_function(bot_obj, update, context, *args, **kwargs)
 
@@ -52,6 +51,7 @@ class States:
      EDIT_EMAIL,
      SAVE_TRAIN,
      SAVED_TRAINS,
+     BROADCAST,
      *_) = range(256)
 
 
@@ -70,18 +70,28 @@ class TrainCouponBot:
     WELCOME_MESSAGE = "Welcome to Train Voucher bot,\n" \
                       "First, i need our details (Don't worry they are used only for the voucher)"
 
+    RESTART_MESSAGE = r'Hey !, I have been restarted. Send /start to start (Stop conversation to stop getting those ' \
+                      r'notifications)'
+
     MAIN_STATE_OPTIONS = [
         [EDIT_ID, EDIT_PHONE],
         [EDIT_EMAIL, ORDER_COUPON],
         [SAVED_TRAINS]
     ]
 
-    def __init__(self, token, polling, num_threads, port, host='127.0.0.1', logger_level=logging.INFO):
+    def __init__(self, token, polling, num_threads, port, contacts_backup_chat_id, admins=None, host='127.0.0.1',
+                 logger_level=logging.INFO):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
         self.host = host
         self.port = port
+        self.contacts_backup_chat_id = contacts_backup_chat_id
+
+        if admins is None:
+            admins = []
+
+        self.admins = admins
 
         # Enable logging
         self.logger = self._configure_logger(logger_level)
@@ -115,7 +125,8 @@ class TrainCouponBot:
 
         # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', self.handle_start)],
+            entry_points=[CommandHandler('start', self.handle_start),
+                          CommandHandler('broadcast', self.init_broadcast)],
             states={
                 States.ID: [MessageHandler(Filters.text, self.handle_id, pass_user_data=True)],
                 States.PHONE: [MessageHandler(Filters.text, self.handle_phone, pass_user_data=True)],
@@ -131,6 +142,7 @@ class TrainCouponBot:
                 States.HANDLE_TRAIN: [MessageHandler(Filters.text, self.handle_train, pass_chat_data=True)],
                 States.SAVE_TRAIN: [MessageHandler(Filters.text, self.handle_save_train, pass_chat_data=True)],
                 States.SAVED_TRAINS: [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
+                States.BROADCAST: [MessageHandler(Filters.document, self.handle_broadcast, pass_chat_data=True)],
             },
             fallbacks=[CommandHandler('stop', self.cancel, pass_user_data=True)],
             allow_reentry=True
@@ -167,7 +179,7 @@ class TrainCouponBot:
         with open(self.USERS_FILE) as cts:
             contacts = json.load(cts)
 
-        contacts[user.id] = user.username
+        contacts[str(user.id)] = user.username
 
         with open(self.USERS_FILE, "w") as cts:
             json.dump(contacts, cts, indent=4)
@@ -263,6 +275,16 @@ class TrainCouponBot:
 
         context.user_data['last_train'] = current_train
 
+    def _is_initiated(self, context):
+        user_data = context.user_data
+        has_attr = 'id' in user_data and \
+                   'phone' in user_data and \
+                   'email' in user_data
+        has_values = self._id_valid(user_data['id']) and \
+                     self._phone_valid(user_data['phone']) and \
+                     self._email_valid(user_data['email'])
+        return has_attr and has_values
+
     @staticmethod
     def _saved_trains(context, printable=False):
         if 'saved_trains' not in context.user_data:
@@ -281,10 +303,43 @@ class TrainCouponBot:
 
         return train_list
 
+    def _send_contacts_to_admin(self, user):
+        if os.path.exists(self.USERS_FILE):
+            with open(self.USERS_FILE, 'rb') as f:
+                self.updater.bot.send_message(self.contacts_backup_chat_id, str(user))
+                self.updater.bot.send_document(self.contacts_backup_chat_id, f)
+
+    def _move_to_main_state(self, update, context):
+        self._prompt_main_menu(update, context)
+        return States.MAIN
+
     # Handlers
     @log_user
+    def init_broadcast(self, update, context):
+        if update.message.from_user.id not in self.admins:
+            return
+
+        self._reply_message(update, "Please send the contacts json file")
+        return States.BROADCAST
+
+    @log_user
+    @run_async
+    def handle_broadcast(self, update, context):
+        update.message.document.get_file().download(custom_path=self.USERS_FILE)
+        self._broadcast_message_to_users(self.RESTART_MESSAGE)
+        self._reply_message(update, "done")
+
+        if self._is_initiated(context):
+            return self._move_to_main_state(update, context)
+
+        else:
+            return self.handle_start(update, context)
+
+    @log_user
+    @run_async
     def handle_start(self, update, context):
         self._save_user(update.message.from_user)
+        self._send_contacts_to_admin(update.message.from_user)
         self._reply_message(update, self.WELCOME_MESSAGE)
         self._reply_message(update, 'Please enter your ID')
         return States.ID
@@ -319,8 +374,7 @@ class TrainCouponBot:
             return States.EMAIL
 
         context.user_data['email'] = email
-        self._prompt_main_menu(update, context)
-        return States.MAIN
+        return self._move_to_main_state(update, context)
 
     def handle_main_state(self, update, context):
         option = update.callback_query
@@ -348,8 +402,7 @@ class TrainCouponBot:
             option.edit_message_text(text=self.SAVED_TRAINS)
             if len(self._saved_trains(context)) == 0:
                 self._reply_message(option, 'No saved trains found, order first to save')
-                self._prompt_main_menu(option, context)
-                return States.MAIN
+                return self._move_to_main_state(update, context)
 
             self._reply_message(option,
                                 'Choose a train to order from the list below',
@@ -365,8 +418,7 @@ class TrainCouponBot:
 
         context.user_data['id'] = user_id
         self._reply_message(update, f'Success! new ID is {user_id}')
-        self._prompt_main_menu(update, context)
-        return States.MAIN
+        return self._move_to_main_state(update, context)
 
     @log_user
     def handle_edit_phone(self, update, context):
@@ -377,8 +429,7 @@ class TrainCouponBot:
 
         context.user_data['phone'] = phone
         self._reply_message(update, f'Success! new phone number is {phone}')
-        self._prompt_main_menu(update, context)
-        return States.MAIN
+        return self._move_to_main_state(update, context)
 
     @log_user
     def handle_edit_email(self, update, context):
@@ -389,8 +440,7 @@ class TrainCouponBot:
 
         context.user_data['email'] = email
         self._reply_message(update, f'Success! new email address is {email}')
-        self._prompt_main_menu(update, context)
-        return States.MAIN
+        return self._move_to_main_state(update, context)
 
     @log_user
     @handle_back
@@ -438,14 +488,11 @@ class TrainCouponBot:
                 traceback.print_exc()
                 self.logger.error(f'exception occurred in get_available_trains {e}')
                 self._reply_message(update, 'An error occurred on the server, Please try again')
-                self._prompt_main_menu(update, context)
-                return States.MAIN
+                return self._move_to_main_state(update, context)
 
         else:
             self._reply_message(update, "No trains are available for the next week, closing conversation")
-            self._prompt_main_menu(update,
-                                   context)
-            return States.MAIN
+            return self._move_to_main_state(update, context)
 
     @log_user
     @run_async
@@ -508,12 +555,10 @@ class TrainCouponBot:
                 saved_trains.append(last_train)
 
             self._reply_message(update, 'Success! train added to saved trains')
-            self._prompt_main_menu(update, context)
-            return States.MAIN
+            return self._move_to_main_state(update, context)
 
         if option == 'no':
-            self._prompt_main_menu(update, context)
-            return States.MAIN
+            return self._move_to_main_state(update, context)
 
     @log_user
     @handle_back
@@ -551,8 +596,7 @@ class TrainCouponBot:
             traceback.print_exc()
             self.logger.error(f'exception occurred in get_available_trains {e}')
             self._reply_message(update, 'Error occurred please try again')
-            self._prompt_main_menu(update, context)
-            return States.MAIN
+            return self._move_to_main_state(update, context)
 
         for train in available_trains:
             if train['DepartureTime'] == selected_train['DepartureTime'] \
@@ -562,9 +606,7 @@ class TrainCouponBot:
 
         else:  # No trains found
             self._reply_message(update, "The selected train could'nt be found, please check the official site.")
-            self._prompt_main_menu(update,
-                                   context)
-            return States.MAIN
+            return self._move_to_main_state(update, context)
 
         try:
             train_api.request_train(user_id=user_id,
@@ -582,8 +624,7 @@ class TrainCouponBot:
             self.logger.error(f'exception occurred in request_train {e}')
             self._reply_message(update, 'Error occurred please try again')
 
-        self._prompt_main_menu(update, context)
-        return States.MAIN
+        return self._move_to_main_state(update, context)
 
     @log_user
     def cancel(self, update, context):
@@ -604,7 +645,9 @@ if __name__ == '__main__':
             'port': os.environ['PORT'],
             'host': os.environ['HOST'],
             'polling': bool(os.environ['POLLING']),
-            'num_threads': int(os.environ['NUM_THREADS'])
+            'num_threads': int(os.environ['NUM_THREADS']),
+            'contacts_backup_chat_id': int(os.environ['BACKUP_CHAT_ID']),
+            "admins": [int(adm.strip()) for adm in os.environ['ADMINS'].split(',')]  # Comma separated ids
         }
 
     print(config)
