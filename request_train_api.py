@@ -587,7 +587,7 @@ def request_train(user_id,
 
     image_b64_raw = body['BarcodeImage']
     if image_b64_raw is None:
-        raise RuntimeError(f'barcode image is None, error is {body["ErrorDescription"]}')
+        raise RuntimeError(f'barcode image is None, error is `{body["voutcher"]["ErrorDescription"]}`')
 
     _decode_and_save_image(image_b64_raw, dest=image_dest)
 

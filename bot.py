@@ -2,6 +2,7 @@ import re
 import os
 import time
 import json
+import signal
 import logging
 import datetime
 import traceback
@@ -68,6 +69,11 @@ class TrainCouponBot:
 
         # Enable logging
         self.logger = self._configure_logger(logger_level)
+
+        signal.signal(signal.SIGTERM, self._sigterm_handler)
+
+    def _sigterm_handler(self, *args, **kwargs):
+        self.logger.warning('sigterm received')
 
     def _configure_logger(self, logger_level):
         logger = logging.getLogger(__name__)
