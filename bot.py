@@ -67,6 +67,9 @@ class TrainCouponBot:
 
     BACK = 'Return to main menu'
 
+    WELCOME_MESSAGE = "Welcome to Train Voucher bot,\n" \
+                      "First, i need our details (Don't worry they are used only for the voucher)"
+
     MAIN_STATE_OPTIONS = [
         [EDIT_ID, EDIT_PHONE],
         [EDIT_EMAIL, ORDER_COUPON],
@@ -282,7 +285,8 @@ class TrainCouponBot:
     @log_user
     def handle_start(self, update, context):
         self._save_user(update.message.from_user)
-        update.message.reply_text('Please enter your ID', reply_markup=ReplyKeyboardRemove())
+        self._reply_message(update, self.WELCOME_MESSAGE)
+        self._reply_message(update, 'Please enter your ID')
         return States.ID
 
     @log_user
