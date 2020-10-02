@@ -27,6 +27,8 @@ def log_user(handler_function):
 
 
 def handle_back(handle_state_function):
+
+    @wraps(handle_state_function)
     def handler_wrapper(bot_obj, update, context, *args, **kwargs):
         if hasattr(update, 'message') and update.message.text == bot_obj.BACK:
             return bot_obj._move_to_main_state(update, context)
@@ -50,6 +52,7 @@ class States:
      SAVE_TRAIN,
      SAVED_TRAINS,
      BROADCAST,
+     DELETE_SAVED_TRAIN,
      *_) = range(256)
 
 
@@ -61,6 +64,7 @@ class TrainCouponBot:
     EDIT_EMAIL = 'Edit Email'
     ORDER_COUPON = 'Order a coupon'
     SAVED_TRAINS = 'Saved trains'
+    REMOVE_SAVED_TRAINS = 'Delete saved train'
 
     BACK = 'Return to main menu'
 
@@ -75,7 +79,7 @@ class TrainCouponBot:
     MAIN_STATE_OPTIONS = [
         [EDIT_ID, EDIT_EMAIL],
         [ORDER_COUPON],
-        [SAVED_TRAINS]
+        [SAVED_TRAINS, REMOVE_SAVED_TRAINS]
     ]
 
     def __init__(self, token, polling, num_threads, port, contacts_backup_chat_id, admins=None, host='127.0.0.1',
@@ -101,18 +105,9 @@ class TrainCouponBot:
         self.logger.warning('sigterm received')
 
     def _configure_logger(self, logger_level):
+        logging.basicConfig(level=logger_level,
+                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         logger = logging.getLogger(__name__)
-        logger.setLevel(logger_level)
-        formatter = logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-
-        file_handler = logging.handlers.RotatingFileHandler(self.LOG_FILE, maxBytes=2 ** 20, backupCount=2)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
         return logger
 
     def run(self):
@@ -142,6 +137,9 @@ class TrainCouponBot:
                 States.SAVE_TRAIN: [MessageHandler(Filters.text, self.handle_save_train, pass_chat_data=True)],
                 States.SAVED_TRAINS: [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
                 States.BROADCAST: [MessageHandler(Filters.document, self.handle_broadcast, pass_chat_data=True)],
+                States.DELETE_SAVED_TRAIN: [MessageHandler(Filters.text,
+                                                           self.handle_remove_saved_train,
+                                                           pass_chat_data=True)],
             },
             fallbacks=[CommandHandler('stop', self.cancel, pass_user_data=True)],
             allow_reentry=True
@@ -385,12 +383,23 @@ class TrainCouponBot:
             option.edit_message_text(text=self.SAVED_TRAINS)
             if len(self._saved_trains(context)) == 0:
                 self._reply_message(option, 'No saved trains found, order first to save')
-                return self._move_to_main_state(update, context)
+                return self._move_to_main_state(option, context)
 
             self._reply_message(option,
                                 'Choose a train to order from the list below',
                                 keyboard=[[i] for i in self._saved_trains(context, printable=True).keys()])
             return States.SAVED_TRAINS
+
+        if option.data == self.REMOVE_SAVED_TRAINS:
+            option.edit_message_text(text=self.REMOVE_SAVED_TRAINS)
+            if len(self._saved_trains(context)) == 0:
+                self._reply_message(option, 'No saved trains found, order first to save')
+                return self._move_to_main_state(option, context)
+
+            self._reply_message(option,
+                                'Choose a train to delete from the list below',
+                                keyboard=[[i] for i in self._saved_trains(context, printable=True).keys()])
+            return States.DELETE_SAVED_TRAIN
 
     @log_user
     def handle_edit_id(self, update, context):
@@ -540,7 +549,9 @@ class TrainCouponBot:
         selected_train = update.message.text
         saved_trains = self._saved_trains(context, printable=True)
         if selected_train not in saved_trains.keys():
-            self._reply_message(update, "Please select a train from the list below")
+            self._reply_message(update,
+                                "Please select a train from the list below",
+                                keyboard=[[i] for i in saved_trains.keys()])
             return States.SAVED_TRAINS
 
         selected_train = saved_trains[selected_train]
@@ -596,6 +607,22 @@ class TrainCouponBot:
             self.logger.error(f'exception occurred in request_train {e}')
             self._reply_message(update, 'Error occurred please try again')
 
+        return self._move_to_main_state(update, context)
+
+    @log_user
+    @handle_back
+    def handle_remove_saved_train(self, update, context):
+        selected_train = update.message.text
+        saved_trains = self._saved_trains(context, printable=True)
+        if selected_train not in saved_trains.keys():
+            self._reply_message(update,
+                                "Please select a train from the list below",
+                                keyboard=[[i] for i in saved_trains.keys()])
+            return States.DELETE_SAVED_TRAIN
+
+        selected_train = saved_trains[selected_train]
+        context.user_data['saved_trains'].remove(selected_train)
+        self._reply_message(update, "Success! train has been removed")
         return self._move_to_main_state(update, context)
 
     @log_user
