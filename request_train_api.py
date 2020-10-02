@@ -7,6 +7,8 @@ from json import JSONDecodeError
 
 import requests
 
+MOBILE_PLACEHOLDER = "0123456789"
+
 proxies = {'https': os.getenv('RAIL_PROXY')}
 
 stations_info = {
@@ -523,8 +525,7 @@ def _train_arrival_datetime(train):
 
 
 def request_train(user_id,
-                  mobile,
-                  email,
+                  email='',
                   origin_station_id=None,
                   dest_station_id=None,
                   time_for_request: datetime.datetime = None,
@@ -533,7 +534,7 @@ def request_train(user_id,
     url = ("https://www.rail.co.il/taarif//_layouts/15/SolBox.Rail.FastSale/ReservedPlaceHandler.ashx"
            "?numSeats=1"
            f"&smartCard={user_id}"
-           f"&mobile={mobile}"
+           f"&mobile={MOBILE_PLACEHOLDER}"
            f"&userEmail={email}"
            "&method=MakeVoucherSeatsReservation"
            "&IsSendEmail=true"

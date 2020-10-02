@@ -38,7 +38,6 @@ def handle_back(handle_state_function):
 
 class States:
     (ID,
-     PHONE,
      EMAIL,
      MAIN,
      HANDLE_ORIGIN_STATION,
@@ -47,7 +46,6 @@ class States:
      HANDLE_TRAIN,
      WHETHER_TO_CONTINUE,
      EDIT_ID,
-     EDIT_PHONE,
      EDIT_EMAIL,
      SAVE_TRAIN,
      SAVED_TRAINS,
@@ -60,12 +58,13 @@ class TrainCouponBot:
     USERS_FILE = 'contacts.json'
 
     EDIT_ID = 'Edit ID'
-    EDIT_PHONE = 'Edit Phone'
     EDIT_EMAIL = 'Edit Email'
     ORDER_COUPON = 'Order a coupon'
     SAVED_TRAINS = 'Saved trains'
 
     BACK = 'Return to main menu'
+
+    DONE_COMMAND = 'done'
 
     WELCOME_MESSAGE = "Welcome to Train Voucher bot,\n" \
                       "First, i need our details (Don't worry they are used only for the voucher)"
@@ -74,8 +73,8 @@ class TrainCouponBot:
                       r'notifications)'
 
     MAIN_STATE_OPTIONS = [
-        [EDIT_ID, EDIT_PHONE],
-        [EDIT_EMAIL, ORDER_COUPON],
+        [EDIT_ID, EDIT_EMAIL],
+        [ORDER_COUPON],
         [SAVED_TRAINS]
     ]
 
@@ -129,12 +128,12 @@ class TrainCouponBot:
                           CommandHandler('broadcast', self.init_broadcast)],
             states={
                 States.ID: [MessageHandler(Filters.text, self.handle_id, pass_user_data=True)],
-                States.PHONE: [MessageHandler(Filters.text, self.handle_phone, pass_user_data=True)],
-                States.EMAIL: [MessageHandler(Filters.text, self.handle_email, pass_user_data=True)],
+                States.EMAIL: [MessageHandler(Filters.text, self.handle_email, pass_user_data=True),
+                               CommandHandler(self.DONE_COMMAND, self.handle_email, pass_user_data=True)],
                 States.MAIN: [CallbackQueryHandler(self.handle_main_state, pass_user_data=True)],
                 States.EDIT_ID: [MessageHandler(Filters.text, self.handle_edit_id, pass_user_data=True)],
-                States.EDIT_PHONE: [MessageHandler(Filters.text, self.handle_edit_phone, pass_user_data=True)],
-                States.EDIT_EMAIL: [MessageHandler(Filters.text, self.handle_edit_email, pass_user_data=True)],
+                States.EDIT_EMAIL: [MessageHandler(Filters.text, self.handle_edit_email, pass_user_data=True),
+                                    CommandHandler(self.DONE_COMMAND, self.handle_edit_email, pass_user_data=True)],
                 States.HANDLE_ORIGIN_STATION: [
                     MessageHandler(Filters.text, self.handle_origin_station, pass_user_data=True)],
                 States.HANDLE_DEST_STATION: [MessageHandler(Filters.text, self.handle_dest_station,
@@ -213,10 +212,6 @@ class TrainCouponBot:
         return re.fullmatch(r'\d+', id_arg) is not None
 
     @staticmethod
-    def _phone_valid(phone):
-        return re.fullmatch(r'\d+', phone) is not None
-
-    @staticmethod
     def _email_valid(email):
         return re.fullmatch(r'.+@.+', email) is not None
 
@@ -251,10 +246,12 @@ class TrainCouponBot:
                             keyboard=[[i] for i in context.user_data['trains'].keys()])
 
     def _prompt_main_menu(self, update, context, message='Please choose an option:'):
+        id = context.user_data['id']
+        email = context.user_data['email']
+        email = 'Not supplied' if email == '' else email
         self._reply_message(update,
-                            f'ID: {context.user_data["id"]}\n'
-                            f'Phone: {context.user_data["phone"]}\n'
-                            f'Email: {context.user_data["email"]}\n'
+                            f'ID: {id}\n'
+                            f'Email: {email}\n'
                             f'{message}',
                             keyboard=self.MAIN_STATE_OPTIONS,
                             inline_keyboard=True)
@@ -277,12 +274,8 @@ class TrainCouponBot:
 
     def _is_initiated(self, context):
         user_data = context.user_data
-        has_attr = 'id' in user_data and \
-                   'phone' in user_data and \
-                   'email' in user_data
-        has_values = self._id_valid(user_data['id']) and \
-                     self._phone_valid(user_data['phone']) and \
-                     self._email_valid(user_data['email'])
+        has_attr = 'id' in user_data and 'email' in user_data
+        has_values = self._id_valid(user_data['id'])
         return has_attr and has_values
 
     @staticmethod
@@ -339,8 +332,8 @@ class TrainCouponBot:
     @run_async
     def handle_start(self, update, context):
         self._save_user(update.message.from_user)
-        self._send_contacts_to_admin(update.message.from_user)
         self._reply_message(update, self.WELCOME_MESSAGE)
+        self._send_contacts_to_admin(update.message.from_user)
         self._reply_message(update, 'Please enter your ID')
         return States.ID
 
@@ -352,24 +345,18 @@ class TrainCouponBot:
             return States.ID
 
         context.user_data['id'] = user_id
-        self._reply_message(update, f'Success! ID is {user_id}. Please enter your phone number')
-        return States.PHONE
-
-    @log_user
-    def handle_phone(self, update, context):
-        phone = update.message.text
-        if not self._phone_valid(phone):
-            self._reply_message(update, 'phone number is not valid, please enter valid phone number')
-            return States.PHONE
-
-        context.user_data['phone'] = phone
-        self._reply_message(update, f'Success! phone number is {phone}. Please enter your email address')
+        self._reply_message(update, f'Success! ID is {user_id}.\n'
+        'Please enter your email address (optional. provide an email address to get order validation and '
+        'cancellation link) or send /done.')
         return States.EMAIL
 
     @log_user
     def handle_email(self, update, context):
         email = update.message.text
-        if not self._email_valid(email):
+        if email == f'/{self.DONE_COMMAND}':  # no email supplied
+            email = ''
+
+        elif not self._email_valid(email):
             self._reply_message(update, 'email is not valid, please enter valid email address')
             return States.EMAIL
 
@@ -384,12 +371,8 @@ class TrainCouponBot:
             option.edit_message_text(text="Enter new ID")
             return States.EDIT_ID
 
-        if option.data == self.EDIT_PHONE:
-            option.edit_message_text(text='Enter new phone number')
-            return States.EDIT_PHONE
-
         if option.data == self.EDIT_EMAIL:
-            option.edit_message_text(text='Enter new email address')
+            option.edit_message_text(text='Enter new email address (send /done to skip)')
             return States.EDIT_EMAIL
 
         if option.data == self.ORDER_COUPON:
@@ -421,25 +404,17 @@ class TrainCouponBot:
         return self._move_to_main_state(update, context)
 
     @log_user
-    def handle_edit_phone(self, update, context):
-        phone = update.message.text
-        if not self._phone_valid(phone):
-            self._reply_message(update, 'phone number is not valid, please enter valid phone number')
-            return States.EDIT_PHONE
-
-        context.user_data['phone'] = phone
-        self._reply_message(update, f'Success! new phone number is {phone}')
-        return self._move_to_main_state(update, context)
-
-    @log_user
     def handle_edit_email(self, update, context):
         email = update.message.text
-        if not self._email_valid(email):
+        if email == f'/{self.DONE_COMMAND}':  # no email supplied
+            email = ''
+
+        elif not self._email_valid(email):
             self._reply_message(update, 'email is not valid, please enter valid email address')
             return States.EDIT_EMAIL
 
         context.user_data['email'] = email
-        self._reply_message(update, f'Success! new email address is {email}')
+        self._reply_message(update, f'Success! new email address is {email if email != "" else "empty"}')
         return self._move_to_main_state(update, context)
 
     @log_user
@@ -511,7 +486,6 @@ class TrainCouponBot:
         try:
             self._reply_message(update, "Ordering coupon...")
             train_api.request_train(user_id=context.user_data['id'],
-                                    mobile=context.user_data['phone'],
                                     email=context.user_data['email'],
                                     train_json=current_train,
                                     image_dest=image_path)
@@ -571,7 +545,6 @@ class TrainCouponBot:
 
         selected_train = saved_trains[selected_train]
         user_id = context.user_data['id']
-        user_phone = context.user_data['phone']
         user_email = context.user_data['email']
         origin_station_id = context.user_data['origin_station_id']
         dest_station_id = context.user_data['dest_station_id']
@@ -610,7 +583,6 @@ class TrainCouponBot:
 
         try:
             train_api.request_train(user_id=user_id,
-                                    mobile=user_phone,
                                     email=user_email,
                                     origin_station_id=origin_station_id,
                                     dest_station_id=dest_station_id,
