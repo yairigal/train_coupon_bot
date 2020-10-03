@@ -1,20 +1,31 @@
-import re
-import os
-import time
-import json
-import signal
-import logging
 import datetime
-import traceback
-from typing import List
+import json
+import logging
 import logging.handlers
+import os
+import re
+import signal
+import time
+import traceback
 from functools import wraps
+from typing import List
 
+from firebase import firebase
+from telegram import ChatAction
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup
+from telegram import ReplyKeyboardRemove
+from telegram.ext import CallbackQueryHandler
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import Filters
+from telegram.ext import MessageHandler
+from telegram.ext import Updater
 from telegram.ext.dispatcher import run_async
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackQueryHandler
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, ChatAction, InlineKeyboardButton, InlineKeyboardMarkup
 
 import request_train_api as train_api
+from db import FirebasePersistence
 
 
 def log_user(handler_function):
@@ -27,7 +38,6 @@ def log_user(handler_function):
 
 
 def handle_back(handle_state_function):
-
     @wraps(handle_state_function)
     def handler_wrapper(bot_obj, update, context, *args, **kwargs):
         if hasattr(update, 'message') and update.message.text == bot_obj.BACK:
@@ -58,7 +68,7 @@ class States:
 
 class TrainCouponBot:
     LOG_FILE = 'bot.log'
-    USERS_FILE = 'contacts.json'
+    USERS_KEY = 'users'
 
     EDIT_ID = 'Edit ID'
     EDIT_EMAIL = 'Edit Email'
@@ -73,23 +83,20 @@ class TrainCouponBot:
     WELCOME_MESSAGE = "Welcome to Train Voucher bot,\n" \
                       "First, i need our details (Don't worry they are used only for the voucher)"
 
-    RESTART_MESSAGE = r'Hey !, I have been restarted. Send /start to start (Stop conversation to stop getting those ' \
-                      r'notifications)'
-
     MAIN_STATE_OPTIONS = [
         [EDIT_ID, EDIT_EMAIL],
         [ORDER_COUPON],
         [SAVED_TRAINS, REMOVE_SAVED_TRAINS]
     ]
 
-    def __init__(self, token, polling, num_threads, port, contacts_backup_chat_id, admins=None, host='127.0.0.1',
+    def __init__(self, token, polling, num_threads, port, firebase_url, admins=None, host='127.0.0.1',
                  logger_level=logging.INFO):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
         self.host = host
         self.port = port
-        self.contacts_backup_chat_id = contacts_backup_chat_id
+        self.firebase_url = firebase_url
 
         if admins is None:
             admins = []
@@ -98,6 +105,7 @@ class TrainCouponBot:
 
         # Enable logging
         self.logger = self._configure_logger(logger_level)
+        self.firebase = firebase.FirebaseApplication(self.firebase_url)
 
         signal.signal(signal.SIGTERM, self._sigterm_handler)
 
@@ -112,7 +120,10 @@ class TrainCouponBot:
 
     def run(self):
         # Create the EventHandler and pass it your bot's token.
-        self.updater = Updater(self.token, workers=self.num_threads, use_context=True)
+        self.updater = Updater(self.token,
+                               workers=self.num_threads,
+                               use_context=True,
+                               persistence=FirebasePersistence(firebase_url=self.firebase_url))
 
         # Get the dispatcher to register handlers
         dp = self.updater.dispatcher
@@ -136,13 +147,15 @@ class TrainCouponBot:
                 States.HANDLE_TRAIN: [MessageHandler(Filters.text, self.handle_train, pass_chat_data=True)],
                 States.SAVE_TRAIN: [MessageHandler(Filters.text, self.handle_save_train, pass_chat_data=True)],
                 States.SAVED_TRAINS: [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
-                States.BROADCAST: [MessageHandler(Filters.document, self.handle_broadcast, pass_chat_data=True)],
+                States.BROADCAST: [MessageHandler(Filters.text, self.handle_broadcast, pass_chat_data=True)],
                 States.DELETE_SAVED_TRAIN: [MessageHandler(Filters.text,
                                                            self.handle_remove_saved_train,
                                                            pass_chat_data=True)],
             },
             fallbacks=[CommandHandler('stop', self.cancel, pass_user_data=True)],
-            allow_reentry=True
+            allow_reentry=True,
+            persistent=True,
+            name='main_conversation'
         )
 
         dp.add_handler(conv_handler)
@@ -168,18 +181,11 @@ class TrainCouponBot:
         self.updater.idle()
 
     def _save_user(self, user):
-        if not os.path.exists(self.USERS_FILE):
-            # Create an empty json file
-            with open(self.USERS_FILE, "w") as cts:
-                cts.write("{}")
+        self.firebase.patch(f'/{self.USERS_KEY}', {str(user.id): user.username})
 
-        with open(self.USERS_FILE) as cts:
-            contacts = json.load(cts)
-
-        contacts[str(user.id)] = user.username
-
-        with open(self.USERS_FILE, "w") as cts:
-            json.dump(contacts, cts, indent=4)
+    @property
+    def users(self):
+        return self.firebase.get(f"/{self.USERS_KEY}", None)
 
     @property
     def _next_week(self):
@@ -189,11 +195,8 @@ class TrainCouponBot:
 
     def _broadcast_message_to_users(self, message):
         self.logger.info(f"Broadcasting message `{message}`")
-        with open(self.USERS_FILE) as f:
-            users = json.load(f)
-
-        for id, name in users.items():
-            time.sleep(1)  # Telegram servers does not let you send more than 30 messages per second
+        for id, name in self.users.items():
+            time.sleep(.1)  # Telegram servers does not let you send more than 30 messages per second
             try:
                 self.updater.bot.sendMessage(int(id), message)
 
@@ -294,12 +297,6 @@ class TrainCouponBot:
 
         return train_list
 
-    def _send_contacts_to_admin(self, user):
-        if os.path.exists(self.USERS_FILE):
-            with open(self.USERS_FILE, 'rb') as f:
-                self.updater.bot.send_message(self.contacts_backup_chat_id, str(user))
-                self.updater.bot.send_document(self.contacts_backup_chat_id, f)
-
     def _move_to_main_state(self, update, context):
         self._prompt_main_menu(update, context)
         return States.MAIN
@@ -310,14 +307,14 @@ class TrainCouponBot:
         if update.message.from_user.id not in self.admins:
             return
 
-        self._reply_message(update, "Please send the contacts json file")
+        self._reply_message(update, "Please send the message to broadcast")
         return States.BROADCAST
 
     @log_user
     @run_async
     def handle_broadcast(self, update, context):
-        update.message.document.get_file().download(custom_path=self.USERS_FILE)
-        self._broadcast_message_to_users(self.RESTART_MESSAGE)
+        message_to_broadcast = update.message.text
+        self._broadcast_message_to_users(message_to_broadcast)
         self._reply_message(update, "done")
 
         if self._is_initiated(context):
@@ -329,9 +326,8 @@ class TrainCouponBot:
     @log_user
     @run_async
     def handle_start(self, update, context):
-        self._save_user(update.message.from_user)
         self._reply_message(update, self.WELCOME_MESSAGE)
-        self._send_contacts_to_admin(update.message.from_user)
+        self._save_user(update.message.from_user)
         self._reply_message(update, 'Please enter your ID')
         return States.ID
 
@@ -645,8 +641,8 @@ if __name__ == '__main__':
             'host': os.environ['HOST'],
             'polling': bool(os.environ['POLLING']),
             'num_threads': int(os.environ['NUM_THREADS']),
-            'contacts_backup_chat_id': int(os.environ['BACKUP_CHAT_ID']),
-            "admins": [int(adm.strip()) for adm in os.environ['ADMINS'].split(',')]  # Comma separated ids
+            "admins": [int(adm.strip()) for adm in os.environ['ADMINS'].split(',')],  # Comma separated ids
+            "firebase_url": os.environ['FIREBASE_URL']
         }
 
     print(config)
