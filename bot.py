@@ -4,7 +4,6 @@ import logging
 import logging.handlers
 import os
 import re
-import signal
 import time
 import traceback
 from functools import wraps
@@ -24,7 +23,7 @@ from telegram.ext import MessageHandler
 from telegram.ext import Updater
 from telegram.ext.dispatcher import run_async
 
-import request_train_api as train_api
+import train_api as train_api
 from firebasepersistance import FirebasePersistence
 
 
@@ -46,6 +45,22 @@ def handle_back(handle_state_function):
         return handle_state_function(bot_obj, update, context, *args, **kwargs)
 
     return handler_wrapper
+
+
+def move_to_main_on_error(handler_function):
+    @wraps(handler_function)
+    def wrapper(self, update, context):
+        try:
+            return handler_function(self, update, context)
+
+        except:
+            self._reply_message(update, "General error occurred")
+            raise
+
+        finally:
+            return self._move_to_main_state(update, context)
+
+    return wrapper
 
 
 class States:
@@ -97,20 +112,49 @@ class TrainCouponBot:
         self.host = host
         self.port = port
         self.firebase_url = firebase_url
-
         if admins is None:
             admins = []
 
         self.admins = admins
-
-        # Enable logging
         self.logger = self._configure_logger(logger_level)
         self.firebase = firebase.FirebaseApplication(self.firebase_url)
 
-        signal.signal(signal.SIGTERM, self._sigterm_handler)
+        # wrap all handlers
+        for state, handler_list in self.states.items():
+            for handler in handler_list:
+                handler.callback = log_user(handler.callback)
+                handler.callback = move_to_main_on_error(handler.callback)
 
-    def _sigterm_handler(self, *args, **kwargs):
-        self.logger.warning('sigterm received')
+    @property
+    def states(self):
+        return {
+            States.ID:
+                [MessageHandler(Filters.text, self.handle_id, pass_user_data=True)],
+            States.EMAIL:
+                [MessageHandler(Filters.text, self.handle_email, pass_user_data=True),
+                 CommandHandler(self.DONE_COMMAND, self.handle_email, pass_user_data=True)],
+            States.MAIN:
+                [CallbackQueryHandler(self.handle_main_state, pass_user_data=True)],
+            States.EDIT_ID:
+                [MessageHandler(Filters.text, self.handle_edit_id, pass_user_data=True)],
+            States.EDIT_EMAIL:
+                [MessageHandler(Filters.text, self.handle_edit_email, pass_user_data=True),
+                 CommandHandler(self.DONE_COMMAND, self.handle_edit_email, pass_user_data=True)],
+            States.HANDLE_ORIGIN_STATION:
+                [MessageHandler(Filters.text, self.handle_origin_station, pass_user_data=True)],
+            States.HANDLE_DEST_STATION:
+                [MessageHandler(Filters.text, self.handle_dest_station, pass_user_data=True)],
+            States.HANDLE_TRAIN:
+                [MessageHandler(Filters.text, self.handle_train, pass_chat_data=True)],
+            States.SAVE_TRAIN:
+                [MessageHandler(Filters.text, self.handle_save_train, pass_chat_data=True)],
+            States.SAVED_TRAINS:
+                [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
+            States.BROADCAST:
+                [MessageHandler(Filters.text, self.handle_broadcast, pass_chat_data=True)],
+            States.DELETE_SAVED_TRAIN:
+                [MessageHandler(Filters.text, self.handle_remove_saved_train, pass_chat_data=True)],
+        }
 
     def _configure_logger(self, logger_level):
         logging.basicConfig(level=logger_level,
@@ -132,26 +176,7 @@ class TrainCouponBot:
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', self.handle_start),
                           CommandHandler('broadcast', self.init_broadcast)],
-            states={
-                States.ID: [MessageHandler(Filters.text, self.handle_id, pass_user_data=True)],
-                States.EMAIL: [MessageHandler(Filters.text, self.handle_email, pass_user_data=True),
-                               CommandHandler(self.DONE_COMMAND, self.handle_email, pass_user_data=True)],
-                States.MAIN: [CallbackQueryHandler(self.handle_main_state, pass_user_data=True)],
-                States.EDIT_ID: [MessageHandler(Filters.text, self.handle_edit_id, pass_user_data=True)],
-                States.EDIT_EMAIL: [MessageHandler(Filters.text, self.handle_edit_email, pass_user_data=True),
-                                    CommandHandler(self.DONE_COMMAND, self.handle_edit_email, pass_user_data=True)],
-                States.HANDLE_ORIGIN_STATION: [
-                    MessageHandler(Filters.text, self.handle_origin_station, pass_user_data=True)],
-                States.HANDLE_DEST_STATION: [MessageHandler(Filters.text, self.handle_dest_station,
-                                                            pass_user_data=True)],
-                States.HANDLE_TRAIN: [MessageHandler(Filters.text, self.handle_train, pass_chat_data=True)],
-                States.SAVE_TRAIN: [MessageHandler(Filters.text, self.handle_save_train, pass_chat_data=True)],
-                States.SAVED_TRAINS: [MessageHandler(Filters.text, self.handle_saved_trains, pass_chat_data=True)],
-                States.BROADCAST: [MessageHandler(Filters.text, self.handle_broadcast, pass_chat_data=True)],
-                States.DELETE_SAVED_TRAIN: [MessageHandler(Filters.text,
-                                                           self.handle_remove_saved_train,
-                                                           pass_chat_data=True)],
-            },
+            states=self.states,
             fallbacks=[CommandHandler('stop', self.cancel, pass_user_data=True)],
             allow_reentry=True,
             persistent=True,
@@ -257,21 +282,14 @@ class TrainCouponBot:
                             keyboard=self.MAIN_STATE_OPTIONS,
                             inline_keyboard=True)
 
-    def _replay_coupon(self, context, current_train, image_path, update):
-        origin_station = train_api.train_station_id_to_name(int(current_train['OrignStation']))
-        dest_station = train_api.train_station_id_to_name(int(current_train['DestinationStation']))
-        train_date = context.user_data['date']
-        train_times = train_api.get_train_printable_travel_time(current_train)
-        self._reply_message(update,
-                            f"Coupon for train #{current_train['Trainno']}:\n"
-                            f"{origin_station} -> {dest_station}\n"
-                            f"{self._reformat_to_readable_date(train_date)}, {train_times}")
+    def _replay_coupon(self, context, current_train: train_api.Train, image_path, update):
+        self._reply_message(update, str(current_train))
         with open(image_path, 'rb') as f:
             update.message.bot.send_chat_action(chat_id=update.effective_message.chat_id,
                                                 action=ChatAction.UPLOAD_PHOTO)
             update.message.reply_photo(f)
 
-        context.user_data['last_train'] = current_train
+        context.user_data['last_train'] = current_train.to_dict()
 
     def _is_initiated(self, context):
         user_data = context.user_data
@@ -302,7 +320,6 @@ class TrainCouponBot:
         return States.MAIN
 
     # Handlers
-    @log_user
     def init_broadcast(self, update, context):
         if update.message.from_user.id not in self.admins:
             return
@@ -310,7 +327,6 @@ class TrainCouponBot:
         self._reply_message(update, "Please send the message to broadcast")
         return States.BROADCAST
 
-    @log_user
     @run_async
     def handle_broadcast(self, update, context):
         message_to_broadcast = update.message.text
@@ -323,15 +339,14 @@ class TrainCouponBot:
         else:
             return self.handle_start(update, context)
 
-    @log_user
     @run_async
+    @log_user
     def handle_start(self, update, context):
         self._reply_message(update, self.WELCOME_MESSAGE)
         self._save_user(update.message.from_user)
         self._reply_message(update, 'Please enter your ID')
         return States.ID
 
-    @log_user
     def handle_id(self, update, context):
         user_id = update.message.text
         if not self._id_valid(user_id):
@@ -344,7 +359,6 @@ class TrainCouponBot:
         'cancellation link) or send /done.')
         return States.EMAIL
 
-    @log_user
     def handle_email(self, update, context):
         email = update.message.text
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
@@ -397,7 +411,6 @@ class TrainCouponBot:
                                 keyboard=[[i] for i in self._saved_trains(context, printable=True).keys()])
             return States.DELETE_SAVED_TRAIN
 
-    @log_user
     def handle_edit_id(self, update, context):
         user_id = update.message.text
         if not self._id_valid(user_id):
@@ -408,7 +421,6 @@ class TrainCouponBot:
         self._reply_message(update, f'Success! new ID is {user_id}')
         return self._move_to_main_state(update, context)
 
-    @log_user
     def handle_edit_email(self, update, context):
         email = update.message.text
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
@@ -422,7 +434,6 @@ class TrainCouponBot:
         self._reply_message(update, f'Success! new email address is {email if email != "" else "empty"}')
         return self._move_to_main_state(update, context)
 
-    @log_user
     @handle_back
     def handle_origin_station(self, update, context):
         origin_station = update.message.text
@@ -439,7 +450,6 @@ class TrainCouponBot:
                             keyboard=[[i] for i in self.train_stations])
         return States.HANDLE_DEST_STATION
 
-    @log_user
     @run_async
     @handle_back
     def handle_dest_station(self, update, context):
@@ -458,7 +468,7 @@ class TrainCouponBot:
                                                              dest_station_id=context.user_data['dest_station_id'],
                                                              date=day))
                 if len(trains) > 0:
-                    trains = {train_api.get_train_printable_travel_time(train): train for train in trains}
+                    trains = {train.get_printable_travel_time(): train.to_dict() for train in trains}
                     context.user_data['trains'] = trains
                     context.user_data['date'] = day
                     self._reply_train_summary(update, context)
@@ -474,7 +484,6 @@ class TrainCouponBot:
             self._reply_message(update, "No trains are available for the next week, closing conversation")
             return self._move_to_main_state(update, context)
 
-    @log_user
     @run_async
     @handle_back
     def handle_train(self, update, context):
@@ -486,6 +495,7 @@ class TrainCouponBot:
             return States.HANDLE_TRAIN
 
         current_train = context.user_data['trains'][train_date]
+        current_train = train_api.Train.from_json(current_train)
 
         image_path = 'image.jpeg'
         try:
@@ -519,7 +529,6 @@ class TrainCouponBot:
                             keyboard=[['Yes', 'No']])
         return States.SAVE_TRAIN
 
-    @log_user
     @handle_back
     def handle_save_train(self, update, context):
         option = update.message.text.lower()
@@ -534,12 +543,9 @@ class TrainCouponBot:
                 saved_trains.append(last_train)
 
             self._reply_message(update, 'Success! train added to saved trains')
-            return self._move_to_main_state(update, context)
 
-        if option == 'no':
-            return self._move_to_main_state(update, context)
+        return self._move_to_main_state(update, context)
 
-    @log_user
     @handle_back
     def handle_saved_trains(self, update, context):
         selected_train = update.message.text
@@ -550,16 +556,14 @@ class TrainCouponBot:
                                 keyboard=[[i] for i in saved_trains.keys()])
             return States.SAVED_TRAINS
 
-        selected_train = saved_trains[selected_train]
+        selected_train = train_api.Train.from_json(saved_trains[selected_train])
         user_id = context.user_data['id']
         user_email = context.user_data['email']
         origin_station_id = context.user_data['origin_station_id']
         dest_station_id = context.user_data['dest_station_id']
-        train_departure = train_api._get_hour(selected_train['DepartureTime'])
-        train_departure = datetime.time.fromisoformat(train_departure)
 
         now = datetime.datetime.now()
-        request_train_datetime = datetime.datetime.combine(now, train_departure)
+        request_train_datetime = datetime.datetime.combine(now, selected_train.departure_time)
         if now > request_train_datetime:
             self._reply_message(update,
                                 'Train departure time has passed',
@@ -579,9 +583,8 @@ class TrainCouponBot:
             return self._move_to_main_state(update, context)
 
         for train in available_trains:
-            if train['DepartureTime'] == selected_train['DepartureTime'] \
-                    and \
-                    train['ArrivalTime'] == selected_train['ArrivalTime']:
+            if train.departure_datetime == selected_train.departure_datetime and \
+                    train.arrival_datetime == selected_train.arrival_datetime:
                 break  # This train exists
 
         else:  # No trains found
@@ -605,7 +608,6 @@ class TrainCouponBot:
 
         return self._move_to_main_state(update, context)
 
-    @log_user
     @handle_back
     def handle_remove_saved_train(self, update, context):
         selected_train = update.message.text
