@@ -15,7 +15,9 @@ def flatten(deep_list):
 
 def enocde_conversations(conversations):
     """Helper method to encode a conversations dict (that uses tuples as keys) to a
-    JSON-serializable way. Use :attr:`_decode_conversations_from_json` to decode.
+    JSON-serializable way. Use :attr:`decode_conversations` to decode.
+
+    Since firebase does not support [ and ] characters, the json string is replaced with (, ) instead of [ and ].
 
     Args:
         conversations (:obj:`dict`): The conversations dict to transofrm to JSON.
@@ -36,10 +38,14 @@ def enocde_conversations(conversations):
 
 def decode_conversations(conversations_dict):
     """Helper method to decode a conversations dict (that uses tuples as keys) from a
-    JSON-string created with :attr:`_encode_conversations_to_json`.
+    JSON-string created with :attr:`enocde_conversations`.
+
+    The received keys are strings which contain tuples. The function replaces the 'tuple string' to a 'list string' (
+    e.g. "(123, 456)" to "[123, 456]") which than can be decoded using json.
+    Then its converted back to tuples to its original form.
 
     Args:
-        json_string (:obj:`str`): The conversations dict as JSON string.
+        json_string (:obj:`dict`): The conversations dict.
 
     Returns:
         :obj:`dict`: The conversations dict after decoding

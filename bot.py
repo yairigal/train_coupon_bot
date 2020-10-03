@@ -25,7 +25,7 @@ from telegram.ext import Updater
 from telegram.ext.dispatcher import run_async
 
 import request_train_api as train_api
-from db import FirebasePersistence
+from firebasepersistance import FirebasePersistence
 
 
 def log_user(handler_function):
