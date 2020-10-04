@@ -673,7 +673,7 @@ def request_train(user_id,
         'TrainOrder': 1
     }]
 
-    res = requests.post(url, data=json.dumps(payload), proxies=proxies)
+    res = requests.post(url, data=json.dumps(payload), proxies=proxies, timeout=60)
     try:
         body = res.json()
 

@@ -766,6 +766,7 @@ class TrainCouponBot:
 
         return self._move_to_main_state(update, context)
 
+    @run_async
     @handle_back
     def handle_saved_trains(self, update, context):
         """Saved trains state callback.
