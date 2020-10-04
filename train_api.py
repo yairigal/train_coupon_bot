@@ -1,11 +1,14 @@
-# coding=utf-8
-import os
-import json
 import base64
 import datetime
+import json
+import os
+import re
 from json import JSONDecodeError
+from operator import attrgetter
 
 import requests
+
+MOBILE_PLACEHOLDER = "0123456789"
 
 proxies = {'https': os.getenv('RAIL_PROXY')}
 
@@ -422,14 +425,91 @@ stations_info = {
            'ID': '70'}}
 
 
-def _get_hour(train_time):
-    return train_time.split(' ')[-1].replace(":00", "")
+class Train:
+    def __init__(self,
+                 departure_time: datetime.datetime,
+                 arrival_time: datetime.datetime,
+                 origin_station_id: int,
+                 destination_station_id: int,
+                 train_number: int,
+                 destination_platform: int):
+        self.departure_datetime = departure_time
+        self.arrival_datetime = arrival_time
+        self.origin_station_id = origin_station_id
+        self.destination_station_id = destination_station_id
+        self.train_number = train_number
+        self.destination_platform = destination_platform
 
+    @classmethod
+    def from_json(cls, train_dict):
+        arrival_time = Train._train_arrival_datetime(train_dict["ArrivalTime"])
+        departure_time = Train._train_arrival_datetime(train_dict["DepartureTime"])
+        return cls(departure_time=departure_time,
+                   arrival_time=arrival_time,
+                   origin_station_id=int(train_dict["OrignStation"]),
+                   destination_station_id=int(train_dict["DestinationStation"]),
+                   train_number=int(train_dict["Trainno"]),
+                   destination_platform=int(train_dict["DestPlatform"]))
 
-def get_train_printable_travel_time(train_json):
-    departure_hour = _get_hour(train_json['DepartureTime'])
-    arrival_hour = _get_hour(train_json['ArrivalTime'])
-    return (f"{departure_hour} - {arrival_hour}")
+    def get_printable_travel_time(self):
+        return f"{self.departure_time} - {self.arrival_time}"
+
+    @staticmethod
+    def _get_hour(train_time):
+        return train_time.split(' ')[-1].replace(":00", "")
+
+    @staticmethod
+    def _train_arrival_datetime(train_time):
+        return datetime.datetime.strptime(train_time, "%d/%m/%Y %H:%M:%S")
+
+    @property
+    def arrival_time(self):
+        return self.arrival_datetime.time().strftime("%H:%M")
+
+    @property
+    def arrival_date(self):
+        return self.arrival_datetime.date().strftime("%d/%m/%Y")
+
+    @property
+    def departure_time(self):
+        return self.departure_datetime.time().strftime("%H:%M")
+
+    @property
+    def departure_date(self):
+        return self.departure_datetime.date().strftime("%d/%m/%Y")
+
+    @property
+    def printable_arrival_time(self):
+        return f"{self.arrival_date} {self.arrival_time}:00"
+
+    @property
+    def printable_departure_time(self):
+        return f"{self.departure_date} {self.departure_time}:00"
+
+    def to_dict(self):
+        return {
+            "DepartureTime": self.printable_departure_time,
+            'ArrivalTime': self.printable_arrival_time,
+            'OrignStation': self.origin_station_id,
+            "DestinationStation": self.destination_station_id,
+            "Trainno": self.train_number,
+            "DestPlatform": self.destination_platform
+        }
+
+    def __str__(self):
+        origin_station_name = train_station_id_to_name(self.origin_station_id)
+        destination_station_name = train_station_id_to_name(self.destination_station_id)
+        train_date_readable = re.fullmatch("(.*) \d+:.*", self.departure_datetime.ctime()).group(1)
+        train_time_readable = self.get_printable_travel_time()
+        return (f"Train #{self.train_number}:\n"
+                f"{origin_station_name} -> {destination_station_name}\n"
+                f"{train_date_readable}, {train_time_readable}")
+
+    def one_line_description(self):
+        origin_station = train_station_id_to_name(self.origin_station_id)
+        dest_station = train_station_id_to_name(self.destination_station_id)
+        train_times = self.get_printable_travel_time()
+        return f"{origin_station} -> {dest_station}, {train_times}"
 
 
 def train_station_name_to_id(train_name):
@@ -441,6 +521,21 @@ def train_station_id_to_name(train_id):
 
 
 def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.datetime = None):
+    """Get a generator of all the trains that were available today, from 00:00 to 00:00.
+
+    Args:
+        origin_station_id (number): the origin station id.
+        dest_station_id (number): the destination station id.
+        date (datetime.datetime): Optional. the date of the day, the time does not matter. if not supplied the date
+            is today.
+
+    Yields:
+        Train. train object contains all the data of the train.
+
+    Raises:
+        AttributeError: If some of the parameters are wrong.
+        ValueError: The result from the server is missing.
+    """
     if date is None:
         date = datetime.datetime.now()
 
@@ -466,106 +561,115 @@ def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.
 
     for item in body['Data']['Routes']:
         for item2 in item['Train']:
-            yield item2
+            yield Train.from_json(item2)
 
 
 def get_available_trains(origin_station_id, dest_station_id, date: datetime.datetime = None):
+    """Get a generator of all the train that are available from the current date and on.
+
+    Args:
+        origin_station_id (number): the origin station id.
+        dest_station_id (number): the destination station id.
+        date (datetime.datetime): Optional. the day and time to get ongoing trains and on. if not supplied the date
+            is now.
+
+    Yields:
+        Train. train object contains all the data of the train.
+    """
     now = datetime.datetime.now()
-    if date is None:
-        date = now
-
-    date_formatted = str(date).split(" ")[0].replace("-", "")
-    current_hour = f"0{date.hour}" if date.hour < 10 else date.hour
-
-    url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
-           f"?OId={origin_station_id}"
-           f"&TId={dest_station_id}"
-           f"&Date={date_formatted}"
-           f"&Hour={current_hour}00"
-           "&isGoing=true"
-           f"&c={str(round(datetime.datetime.now().timestamp(), 3)).replace('.', '')}")
-    res = requests.get(url)
-    try:
-        body = res.json()
-
-    except JSONDecodeError:
-        raise AttributeError('No JSON received. some of the request parameters might be wrong')
-
-    if 'Data' not in body or 'Routes' not in body['Data']:
-        raise ValueError('Received JSON has no attribute "Data" or "Routes"')
-
-    for item in body['Data']['Routes']:
-        for item2 in item['Train']:
-            if _train_arrival_datetime(item2) > now:
-                yield item2
+    for train in get_all_trains_for_today(origin_station_id, dest_station_id, date):
+        if train.departure_datetime > now:
+            yield train
 
 
 def get_first_available_train(origin_station_id, dest_station_id, date):
-    now = datetime.datetime.now()
+    """Get first train available.
 
+    Args:
+        origin_station_id (number): the origin station id.
+        dest_station_id (number): the destination station id.
+        date (datetime.datetime): Optional. the day and time to get ongoing trains and on. if not supplied the date
+            is now.
+
+    Returns:
+        Train. the first available train for that date.
+
+    Raises:
+        RuntimeError: if no trains were available for that date.
+    """
+    now = datetime.datetime.now()
     trains = get_available_trains(origin_station_id, dest_station_id, date=date)
-    trains = sorted(list(trains), key=_train_arrival_datetime)
-    trains = [train for train in trains if _train_arrival_datetime(train) > now]
+    trains = sorted(list(trains), key=attrgetter('departure_datetime'))
+    trains = [train for train in trains if train.departure_datetime > now]
     if len(trains) == 0:
         raise RuntimeError('No trains available found in that time')
 
     return trains[0]
 
 
-def _decode_and_save_image(raw_b64, dest='image.jpeg'):
-    image_binary = base64.b64decode(raw_b64)
-    with open(dest, 'wb') as f:
-        f.write(image_binary)
-
-
-def _train_arrival_datetime(train):
-    return datetime.datetime.strptime(train['DepartureTime'], "%d/%m/%Y %H:%M:%S")
-
-
 def request_train(user_id,
-                  mobile,
-                  email,
+                  email='',
                   origin_station_id=None,
                   dest_station_id=None,
                   time_for_request: datetime.datetime = None,
-                  train_json=None,
+                  train_instance=None,
                   image_dest='image.jpeg'):
+    """Get a QR code for a specific train.
+
+    Args:
+        user_id (str): user ID number.
+        email (str): Optional. the email the server will send verification mail and cancellation link.
+        origin_station_id (number): the origin station id.
+        dest_station_id (number): the destination station id.
+        time_for_request (datetime.datetime): Optional. the day and time for the train. if not supplied the date
+            is now.
+        train_instance (Train): Optional. can be passed instead of origin_station_id, dest_station_id and
+            time_for_request.
+        image_dest (str): Optional. path where to save the QR code image.
+
+    Note:
+        Either supply origin_station_id, dest_station_id and time_for_request or train_instance. not both and not
+        none of them.
+
+    Raises:
+        AttributeError: some arguments must be wrong.
+        ValueError: No barcode image received.
+        RuntimeError: some other error.
+    """
     url = ("https://www.rail.co.il/taarif//_layouts/15/SolBox.Rail.FastSale/ReservedPlaceHandler.ashx"
            "?numSeats=1"
            f"&smartCard={user_id}"
-           f"&mobile={mobile}"
+           f"&mobile={MOBILE_PLACEHOLDER}"
            f"&userEmail={email}"
            "&method=MakeVoucherSeatsReservation"
            "&IsSendEmail=true"
            "&source=1"
            "&typeId=1")
 
-    if train_json is None and (origin_station_id is None or dest_station_id is None or time_for_request is None):
+    if train_instance is None and (origin_station_id is None or dest_station_id is None or time_for_request is None):
         raise ValueError("Either train_json should be supplied or (origin_station_id, dest_station_id, "
                          "time_for_request)")
 
-    if train_json is not None:
-        train = train_json
-        origin_station_id = int(train['OrignStation'])
-        dest_station_id = int(train['DestinationStation'])
+    if train_instance is not None:
+        train = train_instance
 
     else:
         train = get_first_available_train(origin_station_id, dest_station_id, time_for_request)
 
     payload = [{
-        'TrainDate': f"{train['ArrivalTime'].split(' ')[0]} 00:00:00",
-        'destinationStationId': stations_info[dest_station_id]['ID'],
+        'TrainDate': f"{train.arrival_date} 00:00:00",
+        'destinationStationId': stations_info[train.destination_station_id]['ID'],
         'destinationStationHe': '',
-        'orignStationId': stations_info[origin_station_id]['ID'],
+        'orignStationId': stations_info[train.origin_station_id]['ID'],
         'orignStationHe': '',
-        'trainNumber': train['Trainno'],
-        'departureTime': train['DepartureTime'],
-        'arrivalTime': train['ArrivalTime'],
-        'orignStation': stations_info[origin_station_id]['HE'],
-        'destinationStation': stations_info[dest_station_id]['HE'],
-        'orignStationNum': origin_station_id,
-        'destinationStationNum': dest_station_id,
-        'DestPlatform': train['DestPlatform'],
+        'trainNumber': train.train_number,
+        'departureTime': train.printable_departure_time,
+        'arrivalTime': train.printable_arrival_time,
+        'orignStation': stations_info[train.origin_station_id]['HE'],
+        'destinationStation': stations_info[train.destination_station_id]['HE'],
+        'orignStationNum': train.origin_station_id,
+        'destinationStationNum': train.destination_station_id,
+        'DestPlatform': train.destination_platform,
         'TrainOrder': 1
     }]
 
@@ -583,6 +687,8 @@ def request_train(user_id,
     if image_b64_raw is None:
         raise RuntimeError(f'barcode image is None, error is `{body["voutcher"]["ErrorDescription"]}`')
 
-    _decode_and_save_image(image_b64_raw, dest=image_dest)
+    image_binary = base64.b64decode(image_b64_raw)
+    with open(image_dest, 'wb') as f:
+        f.write(image_binary)
 
     return image_dest
