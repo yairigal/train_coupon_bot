@@ -14,12 +14,12 @@ If you want to run it locally on your machine, create a config file named `confi
 ```json
 {
   "token": "<bot token>",
-  "port": <port>,
-  "host": <host if you run on webhook mode>,
-  "num_threads": <maximun number of threads, max is 100>,
-  "polling": <true for polling, false for webhook>,
-  "admins": [<admins telegram user id>, ...],
-  "firebase_url": <firebase db url>
+  "port": "<port>",
+  "host": "<host if you run on webhook mode>",
+  "num_threads": "<maximun number of threads, max is 100>",
+  "polling": "<true for polling, false for webhook>",
+  "admins": "[<admins telegram user id>, ...]",
+  "firebase_url": "<firebase db url>"
 }
 ```
 
