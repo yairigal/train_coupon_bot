@@ -505,6 +505,12 @@ class Train:
                 f"{origin_station_name} -> {destination_station_name}\n"
                 f"{train_date_readable}, {train_time_readable}")
 
+    def one_line_description(self):
+        origin_station = train_station_id_to_name(self.origin_station_id)
+        dest_station = train_station_id_to_name(self.destination_station_id)
+        train_times = self.get_printable_travel_time()
+        return f"{origin_station} -> {dest_station}, {train_times}"
+
 
 def train_station_name_to_id(train_name):
     return next(idx for idx, train in stations_info.items() if train['HE'] == train_name)
@@ -652,17 +658,17 @@ def request_train(user_id,
 
     payload = [{
         'TrainDate': f"{train.arrival_date} 00:00:00",
-        'destinationStationId': stations_info[dest_station_id]['ID'],
+        'destinationStationId': stations_info[train.destination_station_id]['ID'],
         'destinationStationHe': '',
-        'orignStationId': stations_info[origin_station_id]['ID'],
+        'orignStationId': stations_info[train.origin_station_id]['ID'],
         'orignStationHe': '',
         'trainNumber': train.train_number,
         'departureTime': train.printable_departure_time,
         'arrivalTime': train.printable_arrival_time,
-        'orignStation': stations_info[origin_station_id]['HE'],
-        'destinationStation': stations_info[dest_station_id]['HE'],
-        'orignStationNum': origin_station_id,
-        'destinationStationNum': dest_station_id,
+        'orignStation': stations_info[train.origin_station_id]['HE'],
+        'destinationStation': stations_info[train.destination_station_id]['HE'],
+        'orignStationNum': train.origin_station_id,
+        'destinationStationNum': train.destination_station_id,
         'DestPlatform': train.destination_platform,
         'TrainOrder': 1
     }]
