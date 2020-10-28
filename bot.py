@@ -785,11 +785,16 @@ class TrainCouponBot:
                                         'please enter them again')
             return self.handle_start(update, context)
 
-        except (ValueError, RuntimeError):
+        except ValueError:
             traceback.print_exc()
-            self._reply_message(update,
-                                'No barcode image received from the server. This might happen if the same seat is '
-                                'ordered twice. Please pick another seat')
+            self._reply_message(update, 'An error occurred on the server, please try again')
+            self._reply_trains_list(update, context, date=current_train.departure_datetime)
+            return States.HANDLE_TRAIN
+
+
+        except train_api.TrainSeatError as e:
+            traceback.print_exc()
+            self._reply_message(update, f"Error occurred: {e.message}")
             self._reply_trains_list(update, context, date=current_train.departure_datetime)
             return States.HANDLE_TRAIN
 

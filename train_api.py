@@ -425,6 +425,12 @@ stations_info = {
            'ID': '70'}}
 
 
+class TrainSeatError(Exception):
+    def __init__(self, remote_error_message):
+        self.message = remote_error_message
+        super().__init__()
+
+
 class Train:
     def __init__(self,
                  departure_time: datetime.datetime,
@@ -685,13 +691,13 @@ def request_train(user_id,
 
     except JSONDecodeError:
         raise AttributeError('No JSON received, some of the arguments must be wrong')
-        
+
     if 'BarcodeImage' not in body:
         raise ValueError('Cannot find BarcodeImage in the response JSON')
 
     image_b64_raw = body['BarcodeImage']
     if image_b64_raw is None:
-        raise RuntimeError(f'barcode image is None, error is `{body["voutcher"]["ErrorDescription"]}`')
+        raise TrainSeatError({body["voutcher"]["ErrorDescription"]})
 
     image_binary = base64.b64decode(image_b64_raw)
     with open(image_dest, 'wb') as f:
