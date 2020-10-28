@@ -425,6 +425,12 @@ stations_info = {
            'ID': '70'}}
 
 
+class TrainSeatError(Exception):
+    def __init__(self, remote_error_message):
+        self.message = remote_error_message
+        super().__init__()
+
+
 class Train:
     def __init__(self,
                  departure_time: datetime.datetime,
@@ -432,13 +438,17 @@ class Train:
                  origin_station_id: int,
                  destination_station_id: int,
                  train_number: int,
-                 destination_platform: int):
+                 destination_platform: int,
+                 platform: int,
+                 is_full_train):
         self.departure_datetime = departure_time
         self.arrival_datetime = arrival_time
         self.origin_station_id = origin_station_id
         self.destination_station_id = destination_station_id
         self.train_number = train_number
         self.destination_platform = destination_platform
+        self.platform = platform
+        self.is_full_train = is_full_train
 
     @classmethod
     def from_json(cls, train_dict):
@@ -449,7 +459,9 @@ class Train:
                    origin_station_id=int(train_dict["OrignStation"]),
                    destination_station_id=int(train_dict["DestinationStation"]),
                    train_number=int(train_dict["Trainno"]),
-                   destination_platform=int(train_dict["DestPlatform"]))
+                   destination_platform=int(train_dict["DestPlatform"]),
+                   platform=int(train_dict['Platform']),
+                   is_full_train=train_dict["IsFullTrain"])
 
     def get_printable_travel_time(self):
         return f"{self.departure_time} - {self.arrival_time}"
@@ -503,7 +515,8 @@ class Train:
         train_time_readable = self.get_printable_travel_time()
         return (f"Train #{self.train_number}:\n"
                 f"{origin_station_name} -> {destination_station_name}\n"
-                f"{train_date_readable}, {train_time_readable}")
+                f"{train_date_readable}, {train_time_readable}\n"
+                f"From platform #{self.platform}")
 
     def one_line_description(self):
         origin_station = train_station_id_to_name(self.origin_station_id)
@@ -679,13 +692,13 @@ def request_train(user_id,
 
     except JSONDecodeError:
         raise AttributeError('No JSON received, some of the arguments must be wrong')
-        
+
     if 'BarcodeImage' not in body:
         raise ValueError('Cannot find BarcodeImage in the response JSON')
 
     image_b64_raw = body['BarcodeImage']
     if image_b64_raw is None:
-        raise RuntimeError(f'barcode image is None, error is `{body["voutcher"]["ErrorDescription"]}`')
+        raise TrainSeatError({body["voutcher"]["ErrorDescription"]})
 
     image_binary = base64.b64decode(image_b64_raw)
     with open(image_dest, 'wb') as f:

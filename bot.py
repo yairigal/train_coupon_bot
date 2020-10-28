@@ -30,6 +30,9 @@ import train_api
 from firebasepersistance import FirebasePersistence
 from train_api import Train
 
+# Enable python-telegram-bot logging.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
 def log_user(handler_function):
     @wraps(handler_function)
@@ -86,6 +89,26 @@ class States:
 
 
 class TrainCouponBot:
+    """Israel train coupon bot manager.
+
+    Coronavirus times causes bored people to make this.
+    Telegram bot that can retrieve a QR image from the train server for a seat in the train.
+
+    Attributes:
+        token (str): telegram bot token (secret).
+        polling (bool): whether the bot is polling the telegram servers or is on webhook mode (signing for events
+            from the telegram servers, this requires the `host` attribute.
+        num_threads (number): the amount of threads the bot can open.
+        port (number): the port the bot will open and manage connections on.
+        firebase_url (str): url of the firebase db to save the state of the bot if the bot goes down.
+        admins (list): list of user ids (int) of the admins (can execute admin commands)
+        host (str): the name of the host of the bot (relevant for webhook mode).
+        logger_level (logging.Level): the logger level.
+        log_to_file (bool): whether to save the log into a file on the disk.
+        logger_file_amount (number): the maximum amount of files the logs can cycle on (only relevant if log_to_file
+            is True).
+        logger_file_size (number): the size of each log file (only relevant if log_to_file is True).
+    """
     LOG_FILE = 'bot.log'
     USERS_KEY = 'users'
 
@@ -116,7 +139,10 @@ class TrainCouponBot:
                  firebase_url,
                  admins=None,
                  host='127.0.0.1',
-                 logger_level=logging.INFO):
+                 logger_level=logging.INFO,
+                 log_to_file=False,
+                 logger_file_amount=3,
+                 logger_file_size=2 ** 20):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
@@ -127,7 +153,7 @@ class TrainCouponBot:
             admins = []
 
         self.admins = admins
-        self.logger = self._configure_logger(logger_level)
+        self.logger = self._configure_logger(logger_level, log_to_file, logger_file_amount, logger_file_size)
         self.firebase = firebase.FirebaseApplication(self.firebase_url)
 
         # Instead of placing the decorators on each handler, wrap all of them here
@@ -256,10 +282,26 @@ class TrainCouponBot:
                 for wrapper in wrappers:
                     handler.callback = wrapper(handler.callback)
 
-    def _configure_logger(self, logger_level):
-        logging.basicConfig(level=logger_level,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logger = logging.getLogger(__name__)
+    def _configure_logger(self, logger_level, log_to_file, logger_file_amount, logger_file_size):
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.setLevel(logger_level)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logger_level)
+
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+
+        logger.addHandler(ch)
+
+        if log_to_file:
+            fh = logging.handlers.RotatingFileHandler('train_bot.log',
+                                                      maxBytes=logger_file_size,
+                                                      backupCount=logger_file_amount)
+            fh.setLevel(logger_level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+
         return logger
 
     def _save_user(self, user):
@@ -561,7 +603,7 @@ class TrainCouponBot:
         return States.ID
 
     def handle_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.ID
@@ -573,7 +615,7 @@ class TrainCouponBot:
         return States.EMAIL
 
     def handle_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
@@ -642,7 +684,7 @@ class TrainCouponBot:
             return States.DELETE_SAVED_TRAIN
 
     def handle_edit_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.EDIT_ID
@@ -652,7 +694,7 @@ class TrainCouponBot:
         return self._move_to_main_state(update, context)
 
     def handle_edit_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
@@ -746,11 +788,16 @@ class TrainCouponBot:
                                         'please enter them again')
             return self.handle_start(update, context)
 
-        except (ValueError, RuntimeError):
+        except ValueError:
             traceback.print_exc()
-            self._reply_message(update,
-                                'No barcode image received from the server. This might happen if the same seat is '
-                                'ordered twice. Please pick another seat')
+            self._reply_message(update, 'An error occurred on the server, please try again')
+            self._reply_trains_list(update, context, date=current_train.departure_datetime)
+            return States.HANDLE_TRAIN
+
+
+        except train_api.TrainSeatError as e:
+            traceback.print_exc()
+            self._reply_message(update, f"Error occurred: {e.message}")
             self._reply_trains_list(update, context, date=current_train.departure_datetime)
             return States.HANDLE_TRAIN
 
