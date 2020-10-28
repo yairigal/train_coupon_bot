@@ -30,9 +30,6 @@ import train_api
 from firebasepersistance import FirebasePersistence
 from train_api import Train
 
-# Enable python-telegram-bot logging.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 
 def log_user(handler_function):
     @wraps(handler_function)
@@ -283,7 +280,7 @@ class TrainCouponBot:
                     handler.callback = wrapper(handler.callback)
 
     def _configure_logger(self, logger_level, log_to_file, logger_file_amount, logger_file_size):
-        logger = logging.getLogger(self.__class__.__name__)
+        logger = logging.getLogger()
         logger.setLevel(logger_level)
 
         ch = logging.StreamHandler()
