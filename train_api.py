@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import re
+from dataclasses import dataclass
 from json import JSONDecodeError
 from operator import attrgetter
 
@@ -431,37 +432,41 @@ class TrainSeatError(Exception):
         super().__init__()
 
 
+@dataclass
 class Train:
-    def __init__(self,
-                 departure_time: datetime.datetime,
-                 arrival_time: datetime.datetime,
-                 origin_station_id: int,
-                 destination_station_id: int,
-                 train_number: int,
-                 destination_platform: int,
-                 platform: int,
-                 is_full_train):
-        self.departure_datetime = departure_time
-        self.arrival_datetime = arrival_time
-        self.origin_station_id = origin_station_id
-        self.destination_station_id = destination_station_id
-        self.train_number = train_number
-        self.destination_platform = destination_platform
-        self.platform = platform
-        self.is_full_train = is_full_train
+    departure_datetime: datetime.datetime
+    arrival_datetime: datetime.datetime
+    origin_station_id: int
+    destination_station_id: int
+    train_number: int
+    destination_platform: int
+    platform: int
+    is_full_train: bool
 
     @classmethod
     def from_json(cls, train_dict):
         arrival_time = Train._train_arrival_datetime(train_dict["ArrivalTime"])
         departure_time = Train._train_arrival_datetime(train_dict["DepartureTime"])
-        return cls(departure_time=departure_time,
-                   arrival_time=arrival_time,
+        return cls(departure_datetime=departure_time,
+                   arrival_datetime=arrival_time,
                    origin_station_id=int(train_dict["OrignStation"]),
                    destination_station_id=int(train_dict["DestinationStation"]),
                    train_number=int(train_dict["Trainno"]),
                    destination_platform=int(train_dict["DestPlatform"]),
                    platform=int(train_dict['Platform']),
                    is_full_train=train_dict["IsFullTrain"])
+
+    def to_dict(self):
+        return {
+            "DepartureTime": self.printable_departure_time,
+            'ArrivalTime': self.printable_arrival_time,
+            'OrignStation': self.origin_station_id,
+            "DestinationStation": self.destination_station_id,
+            "Trainno": self.train_number,
+            "DestPlatform": self.destination_platform,
+            "Platform": self.platform,
+            "IsFullTrain": self.is_full_train
+        }
 
     def get_printable_travel_time(self):
         return f"{self.departure_time} - {self.arrival_time}"
@@ -497,16 +502,6 @@ class Train:
     @property
     def printable_departure_time(self):
         return f"{self.departure_date} {self.departure_time}:00"
-
-    def to_dict(self):
-        return {
-            "DepartureTime": self.printable_departure_time,
-            'ArrivalTime': self.printable_arrival_time,
-            'OrignStation': self.origin_station_id,
-            "DestinationStation": self.destination_station_id,
-            "Trainno": self.train_number,
-            "DestPlatform": self.destination_platform
-        }
 
     def __str__(self):
         origin_station_name = train_station_id_to_name(self.origin_station_id)
@@ -591,7 +586,7 @@ def get_available_trains(origin_station_id, dest_station_id, date: datetime.date
     """
     now = datetime.datetime.now()
     for train in get_all_trains_for_today(origin_station_id, dest_station_id, date):
-        if train.departure_datetime > now:
+        if train.departure_datetime >= now:
             yield train
 
 
