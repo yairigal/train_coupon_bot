@@ -515,7 +515,8 @@ class Train:
         train_time_readable = self.get_printable_travel_time()
         return (f"Train #{self.train_number}:\n"
                 f"{origin_station_name} -> {destination_station_name}\n"
-                f"{train_date_readable}, {train_time_readable}")
+                f"{train_date_readable}, {train_time_readable}\n"
+                f"From platform #{self.platform}")
 
     def one_line_description(self):
         origin_station = train_station_id_to_name(self.origin_station_id)
