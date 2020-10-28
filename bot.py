@@ -600,7 +600,7 @@ class TrainCouponBot:
         return States.ID
 
     def handle_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.ID
@@ -612,7 +612,7 @@ class TrainCouponBot:
         return States.EMAIL
 
     def handle_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
@@ -681,7 +681,7 @@ class TrainCouponBot:
             return States.DELETE_SAVED_TRAIN
 
     def handle_edit_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.EDIT_ID
@@ -691,7 +691,7 @@ class TrainCouponBot:
         return self._move_to_main_state(update, context)
 
     def handle_edit_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
