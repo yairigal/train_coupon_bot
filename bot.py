@@ -502,8 +502,7 @@ class TrainCouponBot:
                                                           date=request_train_datetime)
 
         for train in available_trains:
-            if train.departure_datetime == selected_train.departure_datetime and \
-                    train.arrival_datetime == selected_train.arrival_datetime:
+            if train.get_printable_travel_time() == selected_train.get_printable_travel_time():
                 return train
 
     def _handle_train_validation(self,
@@ -732,7 +731,7 @@ class TrainCouponBot:
         context.user_data['dest_station_id'] = train_api.train_station_name_to_id(destination_station)
 
         try:
-            self._reply_message(update, message="retrieving trains...")
+            self._reply_message(update, message="Retrieving trains...")
             trains = self._get_next_available_train_list(context)
             if trains is None:
                 self._reply_message(update, "No trains are available for the next week")
