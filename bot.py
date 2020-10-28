@@ -30,6 +30,9 @@ import train_api
 from firebasepersistance import FirebasePersistence
 from train_api import Train
 
+# Enable python-telegram-bot logging.
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
 def log_user(handler_function):
     @wraps(handler_function)
