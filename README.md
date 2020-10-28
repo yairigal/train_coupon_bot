@@ -10,7 +10,8 @@ build the container
 docker build -t train_bot .
 ```
 setup a config file just as mentioned at [running locally](#running-locally)
-run the container
+
+and run the container
 ```bash
 docker run -it --rm --name train_bot_run train_bot
 ```
