@@ -432,13 +432,17 @@ class Train:
                  origin_station_id: int,
                  destination_station_id: int,
                  train_number: int,
-                 destination_platform: int):
+                 destination_platform: int,
+                 platform: int,
+                 is_full_train):
         self.departure_datetime = departure_time
         self.arrival_datetime = arrival_time
         self.origin_station_id = origin_station_id
         self.destination_station_id = destination_station_id
         self.train_number = train_number
         self.destination_platform = destination_platform
+        self.platform = platform
+        self.is_full_train = is_full_train
 
     @classmethod
     def from_json(cls, train_dict):
@@ -449,7 +453,9 @@ class Train:
                    origin_station_id=int(train_dict["OrignStation"]),
                    destination_station_id=int(train_dict["DestinationStation"]),
                    train_number=int(train_dict["Trainno"]),
-                   destination_platform=int(train_dict["DestPlatform"]))
+                   destination_platform=int(train_dict["DestPlatform"]),
+                   platform=int(train_dict['Platform']),
+                   is_full_train=train_dict["IsFullTrain"])
 
     def get_printable_travel_time(self):
         return f"{self.departure_time} - {self.arrival_time}"

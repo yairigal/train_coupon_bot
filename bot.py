@@ -86,6 +86,26 @@ class States:
 
 
 class TrainCouponBot:
+    """Israel train coupon bot manager.
+
+    Coronavirus times causes bored people to make this.
+    Telegram bot that can retrieve a QR image from the train server for a seat in the train.
+
+    Attributes:
+        token (str): telegram bot token (secret).
+        polling (bool): whether the bot is polling the telegram servers or is on webhook mode (signing for events
+            from the telegram servers, this requires the `host` attribute.
+        num_threads (number): the amount of threads the bot can open.
+        port (number): the port the bot will open and manage connections on.
+        firebase_url (str): url of the firebase db to save the state of the bot if the bot goes down.
+        admins (list): list of user ids (int) of the admins (can execute admin commands)
+        host (str): the name of the host of the bot (relevant for webhook mode).
+        logger_level (logging.Level): the logger level.
+        log_to_file (bool): whether to save the log into a file on the disk.
+        logger_file_amount (number): the maximum amount of files the logs can cycle on (only relevant if log_to_file
+            is True).
+        logger_file_size (number): the size of each log file (only relevant if log_to_file is True).
+    """
     LOG_FILE = 'bot.log'
     USERS_KEY = 'users'
 
@@ -116,7 +136,10 @@ class TrainCouponBot:
                  firebase_url,
                  admins=None,
                  host='127.0.0.1',
-                 logger_level=logging.INFO):
+                 logger_level=logging.INFO,
+                 log_to_file=False,
+                 logger_file_amount=3,
+                 logger_file_size=2 ** 20):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
@@ -127,7 +150,7 @@ class TrainCouponBot:
             admins = []
 
         self.admins = admins
-        self.logger = self._configure_logger(logger_level)
+        self.logger = self._configure_logger(logger_level, log_to_file, logger_file_amount, logger_file_size)
         self.firebase = firebase.FirebaseApplication(self.firebase_url)
 
         # Instead of placing the decorators on each handler, wrap all of them here
@@ -256,10 +279,26 @@ class TrainCouponBot:
                 for wrapper in wrappers:
                     handler.callback = wrapper(handler.callback)
 
-    def _configure_logger(self, logger_level):
-        logging.basicConfig(level=logger_level,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logger = logging.getLogger(__name__)
+    def _configure_logger(self, logger_level, log_to_file, logger_file_amount, logger_file_size):
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.setLevel(logger_level)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logger_level)
+
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+
+        logger.addHandler(ch)
+
+        if log_to_file:
+            fh = logging.handlers.RotatingFileHandler('train_bot.log',
+                                                      maxBytes=logger_file_size,
+                                                      backupCount=logger_file_amount)
+            fh.setLevel(logger_level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+
         return logger
 
     def _save_user(self, user):

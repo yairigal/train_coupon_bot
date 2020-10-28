@@ -33,7 +33,10 @@ If you want to run it locally on your machine, create a config file named `confi
   "num_threads": "<maximun number of threads, max is 100>",
   "polling": "<true for polling, false for webhook>",
   "admins": "[<admins telegram user id>, ...]",
-  "firebase_url": "<firebase db url>"
+  "firebase_url": "<firebase db url>",
+  "log_to_file": true,
+  "logger_file_amount": 3,
+  "logger_file_size": 1000000
 }
 ```
 
