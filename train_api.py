@@ -679,7 +679,7 @@ def request_train(user_id,
 
     except JSONDecodeError:
         raise AttributeError('No JSON received, some of the arguments must be wrong')
-
+        
     if 'BarcodeImage' not in body:
         raise ValueError('Cannot find BarcodeImage in the response JSON')
 

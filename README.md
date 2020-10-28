@@ -4,12 +4,25 @@ While coronavirus is still among us, the Israel train requires its clients to sh
 This Telegram bot help to automate the process.
 
 ## How to run
+### Run on docker
+build the container
+```bash
+docker build -t train_bot .
+```
+setup a config file just as mentioned at [running locally](#running-locally)
+run the container
+```bash
+docker run -it --rm --name train_bot_run train_bot
+```
+
+
+
+### running locally
 First, install requirements
 ```bash
 pip install -r requirements.txt
 ```
 
-#### running locally
 If you want to run it locally on your machine, create a config file named `config.json` and add the following fields:
 ```json
 {

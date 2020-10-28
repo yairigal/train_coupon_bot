@@ -88,7 +88,6 @@ class States:
 class TrainCouponBot:
     LOG_FILE = 'bot.log'
     USERS_KEY = 'users'
-    QR_DEST = 'image.jpeg'
 
     EDIT_ID = 'Edit ID'
     EDIT_EMAIL = 'Edit Email'
@@ -413,13 +412,15 @@ class TrainCouponBot:
         try:
             self._reply_message(update,
                                 message="Ordering coupon...")
+            image_path = f"{time.time_ns()}.jpeg"
             train_api.request_train(user_id=context.user_data['id'],
                                     email=context.user_data['email'],
                                     origin_station_id=context.user_data['origin_station_id'],
                                     dest_station_id=context.user_data['dest_station_id'],
                                     time_for_request=request_train_datetime,
-                                    image_dest=self.QR_DEST)
-            self._replay_coupon(update, context, selected_train, self.QR_DEST)
+                                    image_dest=image_path)
+            self._replay_coupon(update, context, selected_train, image_path)
+            os.remove(image_path)
 
         except (AttributeError, ValueError, RuntimeError) as e:
             traceback.print_exc()
@@ -723,11 +724,13 @@ class TrainCouponBot:
 
         try:
             self._reply_message(update, "Ordering coupon...")
+            image_path = f"{time.time_ns()}.jpeg"
             train_api.request_train(user_id=context.user_data['id'],
                                     email=context.user_data['email'],
                                     train_instance=current_train,
-                                    image_dest=self.QR_DEST)
-            self._replay_coupon(update, context, current_train, self.QR_DEST)
+                                    image_dest=image_path)
+            self._replay_coupon(update, context, current_train, image_path)
+            os.remove(image_path)
             self._reply_message(update,
                                 "Save this train for faster access?",
                                 keyboard=[['Yes', 'No']])
