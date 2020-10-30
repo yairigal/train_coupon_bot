@@ -182,8 +182,14 @@ class TrainCouponBot:
 
         else:
             # webhook
-            self.updater.start_webhook(listen='0.0.0.0', port=self.port, url_path=self.token)
-            self.updater.bot.set_webhook(url=self.host + self.token, max_connections=100)
+            webhook_url = f"{self.host.rstrip('/')}:{self.port}/{self.token}"
+            if not webhook_url.startswith("https://"):
+                webhook_url = f"https://{webhook_url}"
+
+            self.updater.start_webhook(listen='0.0.0.0',
+                                       port=self.port,
+                                       url_path=self.token,
+                                       webhook_url=webhook_url)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
