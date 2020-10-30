@@ -29,7 +29,6 @@ If you want to run it locally on your machine, create a config file named `confi
 {
   "token": "<bot token>",
   "port": "<port>",
-  "host": "<host if you run on webhook mode>",
   "num_threads": "<maximun number of threads, max is 100>",
   "polling": "<true for polling, false for webhook>",
   "admins": "[<admins telegram user id>, ...]",
@@ -45,8 +44,7 @@ from the same directory of `config.json` run `python bot.py` currently supportin
 #### running on heroku
 on heroku set all the following environment variables:
 * `TOKEN` - bot's token
-* `PORT` - port to run on
-* `HOST` - host url if using webhook mode
+* `PORT` - port to run on (telegram supports only 80, 88, 443, 8443)
 * `POLLING` - empty string for webhook mode, True for polling mode
 * `NUM_THREADS` - number of threads
 * `ADMINS` - comma separated list of users ids of the admins

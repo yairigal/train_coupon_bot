@@ -96,10 +96,9 @@ class TrainCouponBot:
         polling (bool): whether the bot is polling the telegram servers or is on webhook mode (signing for events
             from the telegram servers, this requires the `host` attribute.
         num_threads (number): the amount of threads the bot can open.
-        port (number): the port the bot will open and manage connections on.
+        port (number): the port the bot will open and manage connections on. (can only be port 80, 88, 443, 8443).
         firebase_url (str): url of the firebase db to save the state of the bot if the bot goes down.
         admins (list): list of user ids (int) of the admins (can execute admin commands)
-        host (str): the name of the host of the bot (relevant for webhook mode).
         logger_level (logging.Level): the logger level.
         log_to_file (bool): whether to save the log into a file on the disk.
         logger_file_amount (number): the maximum amount of files the logs can cycle on (only relevant if log_to_file
@@ -135,7 +134,6 @@ class TrainCouponBot:
                  port,
                  firebase_url,
                  admins=None,
-                 host='127.0.0.1',
                  logger_level=logging.INFO,
                  log_to_file=False,
                  logger_file_amount=3,
@@ -143,7 +141,6 @@ class TrainCouponBot:
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
-        self.host = host
         self.port = port
         self.firebase_url = firebase_url
         if admins is None:
@@ -183,7 +180,6 @@ class TrainCouponBot:
         else:
             # webhook
             self.updater.start_webhook(listen='0.0.0.0', port=self.port, url_path=self.token)
-            self.updater.bot.set_webhook(url=self.host + self.token, max_connections=100)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
@@ -914,7 +910,6 @@ if __name__ == '__main__':
         config = {
             'token': os.environ['TOKEN'],
             'port': os.environ['PORT'],
-            'host': os.environ['HOST'],
             'polling': bool(os.environ['POLLING']),
             'num_threads': int(os.environ['NUM_THREADS']),
             "admins": [int(adm.strip()) for adm in os.environ['ADMINS'].split(',')],  # Comma separated ids
