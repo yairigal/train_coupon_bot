@@ -182,9 +182,10 @@ class TrainCouponBot:
 
         else:
             # webhook
-            self.updater.start_webhook(listen=self.host,
+            self.updater.start_webhook(listen='0.0.0.0',
                                        port=self.port,
-                                       url_path=self.token)
+                                       url_path=self.token,
+                                       webhook_url=f"{self.host.rstrip('/')}:{self.port}/{self.token}")
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
