@@ -187,6 +187,7 @@ class TrainCouponBot:
             self.updater.start_webhook(listen='0.0.0.0',
                                        port=self.port,
                                        url_path=self.token,
+                                       clean=True,
                                        webhook_url=webhook_url)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
