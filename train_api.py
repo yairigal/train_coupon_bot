@@ -528,7 +528,7 @@ def train_station_id_to_name(train_id):
     return stations_info[train_id]['HE']
 
 
-def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.datetime = None):
+def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.date = None):
     """Get a generator of all the trains that were available today, from 00:00 to 00:00.
 
     Args:
@@ -545,16 +545,15 @@ def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.
         ValueError: The result from the server is missing.
     """
     if date is None:
-        date = datetime.datetime.now()
+        date = datetime.datetime.now().date()
 
-    date_formatted = str(date).split(" ")[0].replace("-", "")
-    current_hour = f"0{date.hour}" if date.hour < 10 else date.hour
+    date_formatted = str(date).replace("-", "")
 
     url = ("https://www.rail.co.il/apiinfo/api/Plan/GetRoutes"
            f"?OId={origin_station_id}"
            f"&TId={dest_station_id}"
            f"&Date={date_formatted}"
-           f"&Hour={current_hour}00"
+           f"&Hour=0000"
            "&isGoing=true"
            f"&c={str(round(datetime.datetime.now().timestamp(), 3)).replace('.', '')}")
     res = requests.get(url)
@@ -573,7 +572,7 @@ def get_all_trains_for_today(origin_station_id, dest_station_id, date: datetime.
 
 
 def get_available_trains(origin_station_id, dest_station_id, date: datetime.datetime = None):
-    """Get a generator of all the train that are available from the current date and on.
+    """Get a generator of all the trains that are available from the current date and on.
 
     Args:
         origin_station_id (number): the origin station id.
@@ -584,9 +583,11 @@ def get_available_trains(origin_station_id, dest_station_id, date: datetime.date
     Yields:
         Train. train object contains all the data of the train.
     """
-    now = datetime.datetime.now()
-    for train in get_all_trains_for_today(origin_station_id, dest_station_id, date):
-        if train.departure_datetime >= now:
+    if date is None:
+        date = datetime.datetime.now()
+
+    for train in get_all_trains_for_today(origin_station_id, dest_station_id, date.date()):
+        if train.departure_datetime >= date:
             yield train
 
 
