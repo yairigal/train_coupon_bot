@@ -34,7 +34,12 @@ from train_api import Train
 def log_user(handler_function):
     @wraps(handler_function)
     def wrapping_handler_function(self, update, context):
-        self.logger.info(f"User {update.message.from_user.username} in {handler_function.__name__}")
+        if hasattr(update.message, 'from_user'):
+            self.logger.info(f"User {update.message.from_user.username} in {handler_function.__name__}")
+
+        else:
+            self.logger.info(f"in {handler_function.__name__}")
+
         return handler_function(self, update, context)
 
     return wrapping_handler_function
@@ -43,7 +48,7 @@ def log_user(handler_function):
 def handle_back(handle_state_function):
     @wraps(handle_state_function)
     def handler_wrapper(bot_obj, update, context, *args, **kwargs):
-        if hasattr(update, 'message') and update.message.text == bot_obj.BACK:
+        if hasattr(update, 'message') and hasattr(update.message, 'text') and update.message.text == bot_obj.BACK:
             return bot_obj._move_to_main_state(update, context)
 
         return handle_state_function(bot_obj, update, context, *args, **kwargs)
@@ -53,15 +58,13 @@ def handle_back(handle_state_function):
 
 def move_to_main_on_error(handler_function):
     @wraps(handler_function)
-    def wrapper(self, update, context):
+    def wrapper(self, update, context, *args, **kwargs):
         try:
             return handler_function(self, update, context)
 
         except:
+            traceback.print_exc()
             self._reply_message(update, "General error occurred")
-            raise
-
-        finally:
             return self._move_to_main_state(update, context)
 
     return wrapper
@@ -86,9 +89,28 @@ class States:
 
 
 class TrainCouponBot:
+    """Israel train coupon bot manager.
+
+    Coronavirus times causes bored people to make this.
+    Telegram bot that can retrieve a QR image from the train server for a seat in the train.
+
+    Attributes:
+        token (str): telegram bot token (secret).
+        polling (bool): whether the bot is polling the telegram servers or is on webhook mode (signing for events
+            from the telegram servers, this requires the `host` attribute.
+        num_threads (number): the amount of threads the bot can open.
+        port (number): the port the bot will open and manage connections on.
+        firebase_url (str): url of the firebase db to save the state of the bot if the bot goes down.
+        admins (list): list of user ids (int) of the admins (can execute admin commands)
+        host (str): the name of the host of the bot (relevant for webhook mode).
+        logger_level (logging.Level): the logger level.
+        log_to_file (bool): whether to save the log into a file on the disk.
+        logger_file_amount (number): the maximum amount of files the logs can cycle on (only relevant if log_to_file
+            is True).
+        logger_file_size (number): the size of each log file (only relevant if log_to_file is True).
+    """
     LOG_FILE = 'bot.log'
     USERS_KEY = 'users'
-    QR_DEST = 'image.jpeg'
 
     EDIT_ID = 'Edit ID'
     EDIT_EMAIL = 'Edit Email'
@@ -117,7 +139,12 @@ class TrainCouponBot:
                  firebase_url,
                  admins=None,
                  host='127.0.0.1',
-                 logger_level=logging.INFO):
+                 logger_level=logging.INFO,
+                 log_to_file=False,
+                 logger_file_amount=3,
+                 logger_file_size=2 ** 20,
+                 *args,
+                 **kwargs):
         self.token = token
         self.polling = polling
         self.num_threads = num_threads
@@ -128,17 +155,14 @@ class TrainCouponBot:
             admins = []
 
         self.admins = admins
-        self.logger = self._configure_logger(logger_level)
+        self.logger = self._configure_logger(logger_level, log_to_file, logger_file_amount, logger_file_size)
         self.firebase = firebase.FirebaseApplication(self.firebase_url)
-
-        # Instead of placing the decorators on each handler, wrap all of them here
-        self._wrap_handlers(log_user, move_to_main_on_error)
 
         # Create the EventHandler and pass it your bot's token.
         self.updater = Updater(self.token,
                                workers=self.num_threads,
-                               use_context=True,
-                               persistence=FirebasePersistence(firebase_url=self.firebase_url))
+                               persistence=FirebasePersistence(firebase_url=self.firebase_url),
+                               use_context=True)
 
         # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
         conversation_handler = ConversationHandler(
@@ -160,8 +184,12 @@ class TrainCouponBot:
 
         else:
             # webhook
-            self.updater.start_webhook(listen='0.0.0.0', port=self.port, url_path=self.token)
-            self.updater.bot.set_webhook(url=self.host + self.token, max_connections=100)
+            webhook_url = f"{self.host.rstrip('/')}:{self.port}/{self.token}"
+            print(f"Starting webhook, sending {webhook_url} to telegram servers")
+            self.updater.start_webhook(listen='0.0.0.0',
+                                       port=self.port,
+                                       url_path=self.token,
+                                       webhook_url=webhook_url)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
         # SIGTERM or SIGABRT. This should be used most of the time, since
@@ -246,21 +274,26 @@ class TrainCouponBot:
 
         return context.user_data['saved_trains']
 
-    def _wrap_handlers(self, *wrappers):
-        """Decorate each state handler.
+    def _configure_logger(self, logger_level, log_to_file, logger_file_amount, logger_file_size):
+        logger = logging.getLogger()
+        logger.setLevel(logger_level)
 
-        Args:
-            *wrappers (func): decorator function to wrap the state handler with.
-"       """
-        for state, handler_list in self.states.items():
-            for handler in handler_list:
-                for wrapper in wrappers:
-                    handler.callback = wrapper(handler.callback)
+        sh = logging.StreamHandler()
+        sh.setLevel(logger_level)
 
-    def _configure_logger(self, logger_level):
-        logging.basicConfig(level=logger_level,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logger = logging.getLogger(__name__)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        sh.setFormatter(formatter)
+
+        logger.addHandler(sh)
+
+        if log_to_file:
+            fh = logging.handlers.RotatingFileHandler('train_bot.log',
+                                                      maxBytes=logger_file_size,
+                                                      backupCount=logger_file_amount)
+            fh.setLevel(logger_level)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+
         return logger
 
     def _save_user(self, user):
@@ -288,7 +321,7 @@ class TrainCouponBot:
 
             except BaseException as e:
                 traceback.print_exc()
-                self.logger.debug(f'Failed to broadcast message to {name} due to {e}')
+                self.logger.info(f'Failed to broadcast message to {name} due to {e}')
 
     def _reformat_to_readable_date(self, d: datetime.datetime) -> str:
         """Convert datetime object into readable date label.
@@ -397,29 +430,36 @@ class TrainCouponBot:
         self._prompt_main_menu(update, context)
         return States.MAIN
 
+    def _order_train(self, update, context, selected_train):
+        """Order a train seat, reply back the QR image.
+
+        Args:
+            update (telegram.update.Update): current telegram update.
+            context (telegram.ext.callbackcontext.CallbackContext): current chat context.
+            selected_train (Train): train instance to order seat to.
+        """
+        self._reply_message(update, message="Ordering coupon...")
+        image_path = f"{time.time_ns()}.jpeg"
+        train_api.request_train(user_id=context.user_data['id'],
+                                email=context.user_data['email'],
+                                train_instance=selected_train,
+                                image_dest=image_path)
+        self._replay_coupon(update, context, selected_train, image_path)
+        os.remove(image_path)
+
     def _handle_train_order(self,
                             update,
                             context,
-                            request_train_datetime,
                             selected_train):
         """Order train and send the QR image.
 
         Args:
             update (telegram.update.Update): current telegram update.
             context (telegram.ext.callbackcontext.CallbackContext): current chat context.
-            request_train_datetime (datetime.datetime): the date and time of the train.
             selected_train (Train): the selected train by the user.
         """
         try:
-            self._reply_message(update,
-                                message="Ordering coupon...")
-            train_api.request_train(user_id=context.user_data['id'],
-                                    email=context.user_data['email'],
-                                    origin_station_id=context.user_data['origin_station_id'],
-                                    dest_station_id=context.user_data['dest_station_id'],
-                                    time_for_request=request_train_datetime,
-                                    image_dest=self.QR_DEST)
-            self._replay_coupon(update, context, selected_train, self.QR_DEST)
+            self._order_train(update, context, selected_train)
 
         except (AttributeError, ValueError, RuntimeError) as e:
             traceback.print_exc()
@@ -441,29 +481,21 @@ class TrainCouponBot:
         # free memory
         context.user_data['last_train'] = {}
 
-    def _validate_train_exists(self,
-                               selected_train,
-                               origin_station_id,
-                               dest_station_id,
-                               request_train_datetime) -> Train:
+    def _validate_train_exists(self, selected_train, request_train_datetime) -> Train:
         """Check that the selected train is available in the train servers.
 
         Args:
             selected_train (Train): the train the user selected.
-            origin_station_id (number): original station id.
-            dest_station_id (number): destination station id.
             request_train_datetime (datetime.datetime): the date and time of the train.
 
         Returns:
             Train. return the train if found one the servers or None is no train found.
         """
-        available_trains = train_api.get_available_trains(origin_station_id,
-                                                          dest_station_id,
+        available_trains = train_api.get_available_trains(selected_train.origin_station_id,
+                                                          selected_train.destination_station_id,
                                                           date=request_train_datetime)
-
         for train in available_trains:
-            if train.departure_datetime == selected_train.departure_datetime and \
-                    train.arrival_datetime == selected_train.arrival_datetime:
+            if train.get_printable_travel_time() == selected_train.get_printable_travel_time():
                 return train
 
     def _handle_train_validation(self,
@@ -487,10 +519,7 @@ class TrainCouponBot:
             Train / int. Train object is returned if train was found. if an error occured, the next state is returned.
         """
         try:
-            train = self._validate_train_exists(selected_train,
-                                                context.user_data['origin_station_id'],
-                                                context.user_data['dest_station_id'],
-                                                request_train_datetime)
+            train = self._validate_train_exists(selected_train, request_train_datetime)
             if train is None:
                 self._reply_message(update, "The selected train could'nt be found, please check the official site.")
                 return self._move_to_main_state(update, context)
@@ -539,6 +568,8 @@ class TrainCouponBot:
         self._reply_message(update, "Please send the message to broadcast")
         return States.BROADCAST
 
+    @move_to_main_on_error
+    @log_user
     @run_async
     def handle_broadcast(self, update, context):
         message_to_broadcast = update.message.text
@@ -559,8 +590,9 @@ class TrainCouponBot:
         self._reply_message(update, 'Please enter your ID')
         return States.ID
 
+    @log_user
     def handle_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.ID
@@ -571,8 +603,9 @@ class TrainCouponBot:
         'cancellation link) or send /done.')
         return States.EMAIL
 
+    @log_user
     def handle_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
@@ -583,6 +616,7 @@ class TrainCouponBot:
         context.user_data['email'] = email
         return self._move_to_main_state(update, context)
 
+    @log_user
     def handle_main_state(self, update, context):
         """Main state callback.
 
@@ -640,8 +674,10 @@ class TrainCouponBot:
                                 keyboard=self._saved_trains_keyboard(context))
             return States.DELETE_SAVED_TRAIN
 
+    @move_to_main_on_error
+    @log_user
     def handle_edit_id(self, update, context):
-        user_id = update.message.text
+        user_id = update.message.text.strip()
         if not self._id_valid(user_id):
             self._reply_message(update, 'ID is not valid, please enter valid ID')
             return States.EDIT_ID
@@ -650,8 +686,10 @@ class TrainCouponBot:
         self._reply_message(update, f'Success! new ID is {user_id}')
         return self._move_to_main_state(update, context)
 
+    @move_to_main_on_error
+    @log_user
     def handle_edit_email(self, update, context):
-        email = update.message.text
+        email = update.message.text.strip()
         if email == f'/{self.DONE_COMMAND}':  # no email supplied
             email = ''
 
@@ -663,6 +701,8 @@ class TrainCouponBot:
         self._reply_message(update, f'Success! new email address is {email if email != "" else "empty"}')
         return self._move_to_main_state(update, context)
 
+    @move_to_main_on_error
+    @log_user
     @handle_back
     def handle_origin_station(self, update, context):
         origin_station = update.message.text
@@ -679,7 +719,9 @@ class TrainCouponBot:
                             keyboard=self._stations_keyboard)
         return States.HANDLE_DEST_STATION
 
+    @log_user
     @run_async
+    @move_to_main_on_error
     @handle_back
     def handle_dest_station(self, update, context):
         destination_station = update.message.text
@@ -692,7 +734,7 @@ class TrainCouponBot:
         context.user_data['dest_station_id'] = train_api.train_station_name_to_id(destination_station)
 
         try:
-            self._reply_message(update, message="retrieving trains...")
+            self._reply_message(update, message="Retrieving trains...")
             trains = self._get_next_available_train_list(context)
             if trains is None:
                 self._reply_message(update, "No trains are available for the next week")
@@ -708,7 +750,9 @@ class TrainCouponBot:
             self._reply_message(update, 'An error occurred on the server, Please try again')
             return self._move_to_main_state(update, context)
 
+    @log_user
     @run_async
+    @move_to_main_on_error
     @handle_back
     def handle_train(self, update, context):
         train_date = update.message.text
@@ -722,12 +766,7 @@ class TrainCouponBot:
         current_train: Train = Train.from_json(current_train)
 
         try:
-            self._reply_message(update, "Ordering coupon...")
-            train_api.request_train(user_id=context.user_data['id'],
-                                    email=context.user_data['email'],
-                                    train_instance=current_train,
-                                    image_dest=self.QR_DEST)
-            self._replay_coupon(update, context, current_train, self.QR_DEST)
+            self._order_train(update, context, current_train)
             self._reply_message(update,
                                 "Save this train for faster access?",
                                 keyboard=[['Yes', 'No']])
@@ -743,14 +782,21 @@ class TrainCouponBot:
                                         'please enter them again')
             return self.handle_start(update, context)
 
-        except (ValueError, RuntimeError):
+        except ValueError:
             traceback.print_exc()
-            self._reply_message(update,
-                                'No barcode image received from the server. This might happen if the same seat is '
-                                'ordered twice. Please pick another seat')
+            self._reply_message(update, 'An error occurred on the server, please try again')
             self._reply_trains_list(update, context, date=current_train.departure_datetime)
             return States.HANDLE_TRAIN
 
+
+        except train_api.TrainSeatError as e:
+            traceback.print_exc()
+            self._reply_message(update, f"Error occurred: {e.message}")
+            self._reply_trains_list(update, context, date=current_train.departure_datetime)
+            return States.HANDLE_TRAIN
+
+    @move_to_main_on_error
+    @log_user
     @handle_back
     def handle_save_train(self, update, context):
         option = update.message.text.lower()
@@ -766,7 +812,10 @@ class TrainCouponBot:
 
         return self._move_to_main_state(update, context)
 
+    @run_async
+    @move_to_main_on_error
     @handle_back
+    @log_user
     def handle_saved_trains(self, update, context):
         """Saved trains state callback.
 
@@ -785,17 +834,17 @@ class TrainCouponBot:
         """
         selected_train_label = update.message.text
         saved_trains = self._saved_trains(context)
-        selected_train = Train.from_json(saved_trains[selected_train_label])
         if selected_train_label not in saved_trains.keys():
             self._reply_message(update,
                                 message="Please select a train from the list below",
                                 keyboard=self._saved_trains_keyboard(context))
             return States.SAVED_TRAINS
 
+        selected_train = Train.from_json(saved_trains[selected_train_label])
         # Construct train datetime object
         now = datetime.datetime.now()
         # request date = the current date + train time
-        request_train_datetime = datetime.datetime.combine(now, selected_train.departure_datetime.time())
+        request_train_datetime = datetime.datetime.combine(now.date(), selected_train.departure_datetime.time())
         if now > request_train_datetime:
             self._reply_message(update,
                                 message='Train departure time has passed',
@@ -813,11 +862,12 @@ class TrainCouponBot:
         # Order train
         self._handle_train_order(update,
                                  context,
-                                 request_train_datetime,
                                  selected_train)
 
         return self._move_to_main_state(update, context)
 
+    @move_to_main_on_error
+    @log_user
     @handle_back
     def handle_remove_saved_train(self, update, context):
         """Remove saved train state callback.
