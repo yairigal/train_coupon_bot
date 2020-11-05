@@ -108,6 +108,8 @@ class TrainCouponBot:
         logger_file_amount (number): the maximum amount of files the logs can cycle on (only relevant if log_to_file
             is True).
         logger_file_size (number): the size of each log file (only relevant if log_to_file is True).
+        key (:obj:`str`, optional): Path to the SSL key file.
+        cert (:obj:`str`, optional): Path to the SSL certificate file.
     """
     LOG_FILE = 'bot.log'
     USERS_KEY = 'users'
@@ -143,6 +145,8 @@ class TrainCouponBot:
                  log_to_file=False,
                  logger_file_amount=3,
                  logger_file_size=2 ** 20,
+                 key=None,
+                 cert=None,
                  *args,
                  **kwargs):
         self.token = token
@@ -151,6 +155,8 @@ class TrainCouponBot:
         self.host = host
         self.port = port
         self.firebase_url = firebase_url
+        self.key = key
+        self.cert = cert
         if admins is None:
             admins = []
 
@@ -189,6 +195,8 @@ class TrainCouponBot:
             self.updater.start_webhook(listen='0.0.0.0',
                                        port=self.port,
                                        url_path=self.token,
+                                       key=self.key,
+                                       cert=self.cert,
                                        webhook_url=webhook_url)
 
         # Run the bot until you press Ctrl-C or the process receives SIGINT,
