@@ -922,7 +922,7 @@ if __name__ == '__main__':
             'num_threads': int(os.environ['NUM_THREADS']),
             "admins": [int(adm.strip()) for adm in os.environ['ADMINS'].split(',')],  # Comma separated ids
             "firebase_url": os.environ['FIREBASE_URL'],
-            "logger_level": os.environ['LOGGER_LEVEL']
+            "logger_level": int(os.environ['LOGGER_LEVEL'])
         }
 
     print(config)
